@@ -226,7 +226,7 @@ function TasksPanel({ project, personId, canEdit, canManagePlan }: { project: im
           {tasks.map((task) => (
             <tr key={task.id} className="h-(--row-height) transition-colors hover:bg-sunk">
               <td className="px-3 font-mono text-meta text-ink-muted tnum">{task.code}</td>
-              <td className="max-w-0 px-3">
+              <td className="min-w-48 max-w-72 px-3">
                 <span className="block truncate text-compact text-ink">{task.name}</span>
                 {task.labels.length > 0 && (
                   <span className="mt-0.5 flex flex-wrap gap-1">
