@@ -261,6 +261,8 @@ export const SchedulingService = {
         progressPercent: tasks.progressPercent,
         plannedStartDate: tasks.plannedStartDate,
         plannedEndDate: tasks.plannedEndDate,
+        actualStartDate: tasks.actualStartDate,
+        actualEndDate: tasks.actualEndDate,
         earlyStart: tasks.earlyStart,
         earlyFinish: tasks.earlyFinish,
         lateStart: tasks.lateStart,
@@ -279,6 +281,7 @@ export const SchedulingService = {
 
     const links = await db
       .select({
+        id: taskDependencies.id,
         predecessorId: taskDependencies.predecessorId,
         successorId: taskDependencies.successorId,
         type: taskDependencies.type,

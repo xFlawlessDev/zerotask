@@ -412,7 +412,7 @@ export function useDeleteTask(projectId: string) {
 }
 
 export function useDependencyActions(projectId: string) {
-  const invalidate = [["projects", projectId, "schedule"], ["projects", projectId, "tasks"]];
+  const invalidate = [["projects"], ["overview"], ["my-work"]];
 
   const add = useAction(
     (input: { predecessorId: string; successorId: string; type?: DependencyType; lagDays?: number }) =>

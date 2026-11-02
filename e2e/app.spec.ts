@@ -110,6 +110,47 @@ test.describe("projects", () => {
 });
 
 test.describe("schedule", () => {
+  test("manages task dependencies and displays planned and actual dates", async ({ page }) => {
+    await signIn(page, people.manager);
+    await page.goto("/projects");
+    await page.getByRole("button", { name: "New project" }).click();
+    await page.getByRole("dialog").getByLabel("Project name").fill("Dependency chart test");
+    await page.getByRole("dialog").getByRole("button", { name: "Create project" }).click();
+    await page.getByRole("link", { name: /Dependency chart test/ }).click();
+    await page.getByRole("button", { name: "New task" }).click();
+    let dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Task name").fill("Design work");
+    await dialog.getByLabel("Start date", { exact: true }).fill("2026-08-14");
+    await dialog.getByLabel("End date", { exact: true }).fill("2026-08-18");
+    await dialog.getByRole("button", { name: "Create task" }).click();
+    await page.getByRole("button", { name: "New task" }).click();
+    dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Task name").fill("Build work");
+    const predecessorId = await dialog.getByLabel("Predecessor task").getByRole("option", { name: /Design work/ }).getAttribute("value");
+    await dialog.getByLabel("Predecessor task").selectOption(predecessorId!);
+    await dialog.getByRole("button", { name: "Create task" }).click();
+    await page.getByRole("button", { name: /Manage .*Design work/ }).click();
+    await dialog.getByLabel("Actual start").fill("2026-08-17");
+    await dialog.getByLabel("Actual finish").fill("2026-08-19");
+    await dialog.getByRole("button", { name: "Save changes" }).click();
+    await page.getByRole("tab", { name: "Schedule" }).click();
+    await expect(page.getByRole("img", { name: /Planned dates for .*14 Aug.*18 Aug/ })).toBeVisible();
+    await expect(page.getByRole("img", { name: /Actual dates for .*17 Aug.*19 Aug/ })).toBeVisible();
+    await expect(page.getByTestId("dependency-lines").locator("[data-dependency-id]")).toHaveCount(1);
+    await page.getByRole("tab", { name: "Tasks" }).click();
+    await page.getByRole("button", { name: /Manage .*Build work/ }).click();
+    await dialog.getByRole("button", { name: /Remove dependency/ }).click();
+    await expect(dialog.getByText("No predecessors.")).toBeVisible();
+    const option = await dialog.getByLabel("Predecessor task").getByRole("option", { name: /Design work/ }).getAttribute("value");
+    await dialog.getByLabel("Predecessor task").selectOption(option!);
+    await dialog.getByLabel("Relationship").selectOption("ss");
+    await dialog.getByLabel("Lag (working days)").fill("1");
+    await dialog.getByRole("button", { name: "Add dependency" }).click();
+    await expect(dialog.getByText(/Design work · SS · 1 days/)).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await page.getByRole("tab", { name: "Schedule" }).click();
+    await expect(page.getByTestId("dependency-lines").locator("[data-dependency-id]")).toHaveCount(1);
+  });
   test("keeps task details accessible on a narrow screen", async ({ asLead: page }) => {
     await page.goto("/projects");
     await page.getByRole("link", { name: /Atlas: warehouse rollout/ }).click();
@@ -145,7 +186,7 @@ test.describe("schedule", () => {
     await page.getByRole("link", { name: /Atlas: warehouse rollout/ }).click();
     await page.getByRole("tab", { name: "Schedule" }).click();
     await expect(page.getByText("Latest finish shown")).toBeVisible();
-    await expect(page.getByRole("img", { name: /ZR-001-03/ })).toBeVisible();
+    await expect(page.getByRole("img", { name: /^ZR-001-03/ })).toBeVisible();
     await page.getByLabel("Search tasks").fill("receiving adapter");
     await expect(page.getByText(/1 of \d+ tasks/)).toBeVisible();
     await page.getByRole("button", { name: /Show details for .*Build the receiving adapter/ }).click();

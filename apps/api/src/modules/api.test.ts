@@ -273,6 +273,25 @@ describe("API", () => {
       expect(schedule.body?.projectStartDate).toBe("2026-11-02");
     });
 
+    it("keeps dependency deletion scoped to its project and exposes actual dates", async () => {
+      const { projectId } = await makeProject();
+      const other = await request(admin.api, admin.token, "POST", "/projects", { name: "Other project", kickoffDate: "2026-11-02" });
+      const otherId = other.body?.id as string;
+      const a = await request(admin.api, admin.token, "POST", `/projects/${otherId}/tasks`, { name: "Other first" });
+      const b = await request(admin.api, admin.token, "POST", `/projects/${otherId}/tasks`, { name: "Other second" });
+      await request(admin.api, admin.token, "POST", `/projects/${otherId}/dependencies`, { predecessorId: a.body?.id, successorId: b.body?.id });
+      const timeline = await request(admin.api, admin.token, "GET", `/projects/${otherId}/schedule/timeline`);
+      const link = (timeline.body?.links as { id: string }[])[0]!;
+      const denied = await request(harness.api, harness.token, "DELETE", `/projects/${projectId}/dependencies/${link.id}`);
+      expect(denied.status).toBe(404);
+      const invalid = await request(harness.api, harness.token, "POST", `/projects/${projectId}/tasks`, { name: "Bad dependency", dependsOn: [{ taskId: a.body?.id }] });
+      expect(invalid.status).toBe(422);
+      await request(admin.api, admin.token, "PATCH", `/projects/${otherId}/tasks/${a.body?.id}`, { actualStartDate: "2026-11-02", actualEndDate: "2026-11-03" });
+      const after = await request(admin.api, admin.token, "GET", `/projects/${otherId}/schedule/timeline`);
+      expect((after.body?.links as unknown[]).length).toBe(1);
+      expect((after.body?.bars as { id: string; actualStartDate: string; actualEndDate: string }[]).find((bar) => bar.id === a.body?.id)).toMatchObject({ actualStartDate: "2026-11-02", actualEndDate: "2026-11-03" });
+    });
+
     it("compares holidays without changing the saved schedule", async () => {
       const { projectId } = await makeProject(true);
       const before = await request(harness.api, harness.token, "GET", `/projects/${projectId}/schedule/timeline`);

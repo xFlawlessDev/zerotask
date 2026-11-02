@@ -93,7 +93,7 @@ export function tasksModule(deps: Deps, guards: Guards) {
         }
 
         const updated = await TaskService.update(deps.db, params.taskId, body, actorId);
-        if (touchesPlan) {
+        if (touchesPlan || body.actualStartDate !== undefined || body.actualEndDate !== undefined || body.progressPercent !== undefined) {
           await SchedulingService.recalculate(deps.db, projectId, actorId, { silent: true });
         }
         return updated;
@@ -150,7 +150,7 @@ export function tasksModule(deps: Deps, guards: Guards) {
       "/projects/:projectId/dependencies/:dependencyId",
       async ({ user, projectId, params }) => {
         const actorId = (user as SessionUser).id;
-        const result = await TaskService.removeDependency(deps.db, params.dependencyId, actorId);
+        const result = await TaskService.removeDependency(deps.db, projectId, params.dependencyId, actorId);
         await SchedulingService.recalculate(deps.db, projectId, actorId, { silent: true });
         return result;
       },

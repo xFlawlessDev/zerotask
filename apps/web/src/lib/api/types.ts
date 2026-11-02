@@ -341,6 +341,8 @@ export interface TimelineBar {
   progressPercent: number;
   plannedStartDate: string | null;
   plannedEndDate: string | null;
+  actualStartDate: string | null;
+  actualEndDate: string | null;
   earlyStart: string | null;
   earlyFinish: string | null;
   lateStart: string | null;
@@ -358,7 +360,7 @@ export interface TimelineBar {
 
 export interface Timeline {
   bars: TimelineBar[];
-  links: { predecessorId: string; successorId: string; type: DependencyType; lagDays: number }[];
+  links: { id: string; predecessorId: string; successorId: string; type: DependencyType; lagDays: number }[];
   range: { from: string; to: string } | null;
 }
 

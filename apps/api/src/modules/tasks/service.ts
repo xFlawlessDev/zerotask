@@ -367,6 +367,12 @@ export const TaskService = {
     // An assignee must be able to see the work being given to them.
     if (input.assignedToId) await TaskService.assertProjectMember(db, projectId, input.assignedToId);
     if (input.reviewerId) await TaskService.assertProjectMember(db, projectId, input.reviewerId);
+    if (input.dependsOn?.length) {
+      const ids = input.dependsOn.map((dependency) => dependency.taskId);
+      if (new Set(ids).size !== ids.length) throw errors.invalid("Each predecessor can only be added once");
+      const existing = await db.select({ id: tasks.id }).from(tasks).where(and(eq(tasks.projectId, projectId), inArray(tasks.id, ids), isNull(tasks.deletedAt)));
+      if (existing.length !== ids.length) throw errors.invalid("Every predecessor must belong to this project");
+    }
 
     const code = await nextTaskCode(db, projectId);
 
@@ -477,7 +483,7 @@ export const TaskService = {
     if (input.progressPercent === 100 && !input.status) {
       patch.status = "pending_review";
     }
-    if (input.actualStartDate && !input.status) {
+    if (input.actualStartDate && !input.status && current.status === "not_started") {
       patch.status = "in_progress";
     }
 
@@ -716,10 +722,10 @@ export const TaskService = {
     return TaskService.byId(db, input.successorId);
   },
 
-  async removeDependency(db: Database, dependencyId: string, actorId: string) {
+  async removeDependency(db: Database, projectId: string, dependencyId: string, actorId: string) {
     const [row] = await db
       .delete(taskDependencies)
-      .where(eq(taskDependencies.id, dependencyId))
+      .where(and(eq(taskDependencies.id, dependencyId), eq(taskDependencies.projectId, projectId)))
       .returning({
         projectId: taskDependencies.projectId,
         successorId: taskDependencies.successorId,

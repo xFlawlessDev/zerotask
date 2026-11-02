@@ -110,7 +110,9 @@ export function ScheduleTab({
   if (timeline === undefined) return <LoadingState label="Loading the schedule" />;
 
   const { links } = timeline;
-  const range = scenario ? { from: scenario.projectStartDate, to: scenario.calculatedEndDate } : timeline.range;
+  const scheduleRange = scenario ? { from: scenario.projectStartDate, to: scenario.calculatedEndDate } : timeline.range;
+  const allDates = bars.flatMap((bar) => [bar.start, bar.end, bar.plannedStartDate, bar.plannedEndDate, bar.actualStartDate, bar.actualEndDate].filter((date): date is string => !!date));
+  const range = allDates.length ? { from: allDates.reduce((a, b) => a < b ? a : b), to: allDates.reduce((a, b) => a > b ? a : b) } : scheduleRange;
 
   if (bars.length === 0 || range === null) {
     return (
@@ -151,7 +153,7 @@ export function ScheduleTab({
 
   // The figures describe the whole project, never the filtered subset.
   const criticalCount = bars.filter((bar) => bar.isCritical).length;
-  const projectFinish = range.to;
+  const projectFinish = scheduleRange?.to ?? range.to;
 
   return (
     <div className="flex flex-col gap-4">
@@ -230,6 +232,9 @@ export function ScheduleTab({
           <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-4 rounded-mark bg-accent-ink/70" /> Task</span>
           <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-4 rounded-mark bg-danger" /> Critical task</span>
           <span className="inline-flex items-center gap-1.5"><span className="flex h-2.5 w-5 overflow-hidden rounded-mark bg-accent-ink/40"><span className="w-1/2 bg-accent-ink" /></span> Dark fill = progress</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-2 w-5 rounded-mark border border-dashed border-ink-muted" /> Planned dates</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-2 w-5 rounded-mark bg-settled" /> Actual dates</span>
+          <span className="inline-flex items-center gap-1.5"><span className="text-ink-muted">→</span> Dependency</span>
           <span className="inline-flex items-center gap-1.5"><span className="size-3 border border-rule bg-sunk" /> Weekend</span>
           {includeHolidays && comparison.data && <span className="inline-flex items-center gap-1.5"><span className="size-3 border border-caution/40 bg-caution/15" /> Holiday / joint leave</span>}
           <span className="inline-flex items-center gap-1.5"><span className="h-3 w-px bg-accent-ink" /> Today</span>
@@ -268,7 +273,7 @@ export function ScheduleTab({
             {visibleBars.length === 0 ? (
               <p className="px-3 py-6 text-compact text-ink-muted">No tasks match these filters.</p>
             ) : (
-              <ul className="divide-y divide-rule">
+              <div className="relative"><ul className="divide-y divide-rule">
                 {visibleBars.map((bar) => (
                   <BarRow
                     key={bar.id}
@@ -283,7 +288,7 @@ export function ScheduleTab({
                     onSelect={() => setSelectedId((id) => id === bar.id ? null : bar.id)}
                   />
                 ))}
-              </ul>
+              </ul><DependencyLines bars={visibleBars} links={links} from={from} dayPx={dayPx} trackWidth={trackWidth} /></div>
             )}
           </div>
         </div>
@@ -298,12 +303,15 @@ export function ScheduleTab({
           <div><dt className="text-ink-muted">Progress</dt><dd>{selected.progressPercent}%</dd></div>
           <div><dt className="text-ink-muted">Start</dt><dd>{selected.start ? formatShortDate(selected.start) : "Not scheduled"}</dd></div>
           <div><dt className="text-ink-muted">Finish</dt><dd>{selected.end ? formatShortDate(selected.end) : "Not scheduled"}</dd></div>
+          <div><dt className="text-ink-muted">Planned dates</dt><dd>{selected.plannedStartDate ? formatShortDate(selected.plannedStartDate) : "Not set"} – {selected.plannedEndDate ? formatShortDate(selected.plannedEndDate) : "Not set"}</dd></div>
+          <div><dt className="text-ink-muted">Actual dates</dt><dd>{selected.actualStartDate ? formatShortDate(selected.actualStartDate) : "Not started"} – {selected.actualEndDate ? formatShortDate(selected.actualEndDate) : "Not finished"}</dd></div>
           <div><dt className="text-ink-muted">Float</dt><dd>{selected.float === null ? "Not calculated" : `${selected.float} days`}</dd></div>
           <div><dt className="text-ink-muted">Dependencies</dt><dd>{links.filter((link) => link.successorId === selected.id).length} predecessors · {links.filter((link) => link.predecessorId === selected.id).length} successors</dd></div>
         </dl>
+        {links.some((link) => link.successorId === selected.id || link.predecessorId === selected.id) && <ul className="mt-4 border-t border-rule pt-3 text-compact text-ink-muted">{links.filter((link) => link.successorId === selected.id || link.predecessorId === selected.id).map((link) => { const incoming = link.successorId === selected.id; const other = bars.find((bar) => bar.id === (incoming ? link.predecessorId : link.successorId)); return <li key={link.id}>{incoming ? "Predecessor" : "Successor"}: {other ? `${other.code} ${other.name}` : "Unavailable task"} · {link.type.toUpperCase()} · lag {link.lagDays} working days</li>; })}</ul>}
       </section>}
       <p className="text-meta text-ink-muted">
-        Timeline: {formatShortDate(range.from)} to {formatShortDate(range.to)} · {links.length} dependencies. Gaps in bars mark non-working days. Float is the number of working days a task can move before it delays the project finish.
+        Timeline: {formatShortDate(range.from)} to {formatShortDate(range.to)} · {links.length} dependencies. Arrows connect the displayed scheduled dates; filtered tasks and their links are hidden. Outlined bars use the task's explicit planned dates; actual bars show recorded dates only. Gaps in schedule bars mark non-working days.
       </p>
     </div>
   );
@@ -337,7 +345,7 @@ function BarRow({
     return (
       <li className="flex h-16 items-center">
         <button type="button" onClick={onSelect} aria-pressed={selected} className="sticky left-0 z-10 flex h-full w-40 shrink-0 flex-col justify-center border-r border-rule bg-surface px-3 text-left hover:bg-sunk sm:w-64"><span className="font-mono text-meta text-ink-muted">{bar.code}</span><span className="w-full truncate text-compact">{bar.name}</span></button>
-        <span className="px-3 text-compact text-faint">No dates</span>
+        <div className="relative h-full" style={{ width: trackWidth }}><span className="absolute top-1 left-2 text-meta text-faint">No schedule dates</span><DateTrack label={`Planned dates for ${bar.code}`} start={bar.plannedStartDate} end={bar.plannedEndDate} from={from} dayPx={dayPx} top={39} kind="plan" /><DateTrack label={`Actual dates for ${bar.code}`} start={bar.actualStartDate} end={bar.actualEndDate} from={from} dayPx={dayPx} top={51} kind="actual" /></div>
       </li>
     );
   }
@@ -382,7 +390,7 @@ function BarRow({
         {todayOffset !== null && <span aria-hidden="true" className="absolute top-0 z-[1] h-full w-px bg-accent-ink" style={{ left: todayOffset * dayPx }} />}
 
         <button type="button" onClick={onSelect} aria-label={`Show details for ${bar.code} ${bar.name}`} aria-pressed={selected}
-          className="absolute top-1/2 h-9 -translate-y-1/2 rounded-control focus-visible:z-10"
+          className="absolute top-1 h-8 rounded-control focus-visible:z-10"
           style={{ left: startDay * dayPx, width: barWidth }}>
         <span
           role="img"
@@ -396,9 +404,29 @@ function BarRow({
             return <span key={segment.start} data-schedule-segment className={cn("absolute h-full overflow-hidden rounded-mark", bar.isCritical ? "bg-danger/40" : "bg-accent-ink/40")} style={{ left: segment.start * dayPx, width: segment.days * dayPx }} aria-hidden="true"><span className={cn("block h-full", bar.isCritical ? "bg-danger" : "bg-accent-ink")} style={{ width: `${filled / segment.days * 100}%` }} /></span>;
           })}
         </span></button>
+        <DateTrack label={`Planned dates for ${bar.code}`} start={bar.plannedStartDate} end={bar.plannedEndDate} from={from} dayPx={dayPx} top={39} kind="plan" />
+        <DateTrack label={`Actual dates for ${bar.code}`} start={bar.actualStartDate} end={bar.actualEndDate} from={from} dayPx={dayPx} top={51} kind="actual" />
       </div>
     </li>
   );
+}
+
+function DateTrack({ label, start, end, from, dayPx, top, kind }: { label: string; start: string | null; end: string | null; from: number; dayPx: number; top: number; kind: "plan" | "actual" }) {
+  if (!start && !end) return null;
+  const first = start ?? end!;
+  const last = end ?? start!;
+  const left = (Date.parse(`${first}T00:00:00Z`) - from) / 86_400_000 * dayPx;
+  const width = start && end ? Math.max(4, ((Date.parse(`${last}T00:00:00Z`) - Date.parse(`${first}T00:00:00Z`)) / 86_400_000 + 1) * dayPx) : Math.min(dayPx, 8);
+  return <span role="img" aria-label={`${label}: ${start ? formatShortDate(start) : "start not set"} to ${end ? formatShortDate(end) : "finish not set"}`} title={`${label}: ${start ?? "start not set"} – ${end ?? "finish not set"}`} className={cn("absolute h-2 rounded-mark", kind === "plan" ? "border border-dashed border-ink-muted" : "bg-settled")} style={{ left, width, top }} />;
+}
+
+function DependencyLines({ bars, links, from, dayPx, trackWidth }: { bars: TimelineBar[]; links: Timeline["links"]; from: number; dayPx: number; trackWidth: number }) {
+  const indexes = new Map(bars.map((bar, index) => [bar.id, index]));
+  const coordinate = (date: string, finish: boolean) => ((Date.parse(`${date}T00:00:00Z`) - from) / 86_400_000 + (finish ? 1 : 0)) * dayPx;
+  return <svg aria-hidden="true" data-testid="dependency-lines" className="pointer-events-none absolute top-0 left-40 z-[2] overflow-visible text-ink-muted sm:left-64" width={trackWidth} height={bars.length * 64}>
+    <defs><marker id="schedule-dependency-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="currentColor" /></marker></defs>
+    {links.map((link) => { const fromIndex = indexes.get(link.predecessorId); const toIndex = indexes.get(link.successorId); if (fromIndex === undefined || toIndex === undefined) return null; const pred = bars[fromIndex]!; const succ = bars[toIndex]!; const predFinish = link.type[0] === "f"; const succFinish = link.type[1] === "f"; const predDate = predFinish ? pred.end : pred.start; const succDate = succFinish ? succ.end : succ.start; if (!predDate || !succDate) return null; const x1 = coordinate(predDate, predFinish); const x2 = coordinate(succDate, succFinish); const y1 = fromIndex * 64 + 20; const y2 = toIndex * 64 + 20; const direction1 = predFinish ? 1 : -1; const direction2 = succFinish ? 1 : -1; const elbow1 = x1 + direction1 * 10; const elbow2 = x2 + direction2 * 10; const midY = (y1 + y2) / 2; return <path key={link.id} data-dependency-id={link.id} d={`M ${x1} ${y1} H ${elbow1} V ${midY} H ${elbow2} V ${y2} H ${x2}`} fill="none" stroke="currentColor" strokeWidth="1.25" markerEnd="url(#schedule-dependency-arrow)" />; })}
+  </svg>;
 }
 
 interface TimeMark {
