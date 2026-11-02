@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { useMyWork, useMoveTask } from "@/features/hooks";
+import { useMyWork, useMoveMyTask } from "@/features/hooks";
+import { SubmitTaskDialog } from "@/features/project/submit-task-dialog";
 import { useRequiredSession } from "@/features/session";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, Figure, LoadingState, PageHeader } from "@/components/ui/surface";
@@ -29,7 +30,8 @@ const COLUMNS: { status: TaskStatus; hint: string }[] = [
 export default function MyWorkPage() {
   const { person } = useRequiredSession();
   const { data, isLoading, error, refetch } = useMyWork();
-  const move = useMoveTask("");
+  const move = useMoveMyTask();
+  const [submitting, setSubmitting] = useState<Task | null>(null);
 
   const [dragging, setDragging] = useState<Task | null>(null);
 
@@ -45,10 +47,10 @@ export default function MyWorkPage() {
   );
 
   const handleDrop = (status: TaskStatus) => {
-    if (!dragging || dragging.status === status) return;
+    if (!dragging || dragging.status === status || dragging.status === "pending_review") return;
     if (status === "pending_review") return; // moves to review via a submission, not a drag
     move.mutate(
-      { taskId: dragging.id, status: status as "not_started" | "in_progress" | "blocked" | "cancelled" },
+      { projectId: dragging.projectId, taskId: dragging.id, status: status as "not_started" | "in_progress" | "blocked" | "cancelled" },
       { onSuccess: () => setDragging(null) },
     );
   };
@@ -57,7 +59,7 @@ export default function MyWorkPage() {
     <>
       <PageHeader
         title="My work"
-        description={`Open tasks assigned to ${person.name ?? "you"}, newest deadline first.`}
+        description={`Open tasks assigned to ${person.name ?? "you"}, ordered by deadline.`}
         meta={
           <>
             <Figure value={counts.completed ?? 0} label="completed" tone="settled" />
@@ -113,7 +115,7 @@ export default function MyWorkPage() {
                     {column.tasks.map((task) => (
                       <li key={task.id}>
                         <div
-                          draggable
+                          draggable={task.status !== "pending_review"}
                           onDragStart={() => setDragging(task)}
                           className={cn(
                             "cursor-grab rounded-control border border-rule bg-surface p-2 transition-colors hover:border-ink-muted active:cursor-grabbing",
@@ -152,6 +154,12 @@ export default function MyWorkPage() {
                               <Tag key={label.id} name={label.name} color={label.color} />
                             ))}
                           </div>
+                          {task.status !== "pending_review" && <div className="mt-3 flex flex-wrap items-end gap-2">
+                            <label className="flex min-w-0 flex-1 flex-col gap-1 text-label text-ink-muted">Change status
+                              <select aria-label={`Change status of ${task.name}`} value={task.status} disabled={move.isPending} onChange={(event) => move.mutate({ projectId: task.projectId, taskId: task.id, status: event.target.value as "not_started" | "in_progress" | "blocked" })} className="h-8 w-full rounded-control border border-input bg-surface px-2 text-meta text-ink"><option value="not_started">Not started</option><option value="in_progress">In progress</option><option value="blocked">Blocked</option></select>
+                            </label>
+                            <Button size="sm" onClick={() => setSubmitting(task)}>Submit</Button>
+                          </div>}
                         </div>
                       </li>
                     ))}
@@ -182,8 +190,7 @@ export default function MyWorkPage() {
             )}
 
             <p className="mt-4 text-meta text-ink-muted">
-              Drag a card between columns to change its status. A task cannot be completed by dragging:
-              submit it for review from the project page, and a reviewer decides. Today is{" "}
+              Use the status selector or drag a card between columns. Submit completed work for review; a reviewer decides. Today is{" "}
               <time dateTime={todayIso()} className="tnum">
                 {formatShortDate(todayIso())}
               </time>
@@ -192,8 +199,7 @@ export default function MyWorkPage() {
           </>
         )}
       </div>
+      {submitting && <SubmitTaskDialog task={submitting} onClose={() => setSubmitting(null)} />}
     </>
   );
 }
-
-export { useMoveTask };

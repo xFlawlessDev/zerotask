@@ -404,6 +404,13 @@ export function useMoveTask(projectId: string) {
   );
 }
 
+export function useMoveMyTask() {
+  return useAction((input: { projectId: string; taskId: string; status: "not_started" | "in_progress" | "blocked" | "cancelled" }) => api.tasks.move(input.projectId, input.taskId, input.status), {
+    invalidate: [["projects"], ["my-work"], ["overview"]],
+    success: "Task status updated",
+  });
+}
+
 export function useDeleteTask(projectId: string) {
   return useAction((taskId: string) => api.tasks.remove(projectId, taskId), {
     invalidate: [["projects"], ["overview"], ["my-work"]],
@@ -622,6 +629,7 @@ export function useFavoriteActions() {
 }
 
 export function usePersonActions() {
+  const create = useAction((input: Parameters<typeof api.people.create>[0]) => api.people.create(input), { invalidate: [["people"], ["departments"]], success: "Account created" });
   const update = useAction(
     (input: { id: string; body: Parameters<typeof api.people.update>[1] }) => api.people.update(input.id, input.body),
     { invalidate: [["people"], ["session"]], success: "Person updated" },
@@ -631,7 +639,7 @@ export function usePersonActions() {
     success: "Person removed from the workspace",
   });
 
-  return { update, remove };
+  return { create, update, remove };
 }
 
 export function useDepartmentActions() {

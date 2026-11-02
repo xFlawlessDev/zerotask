@@ -61,6 +61,7 @@ export const api = {
   },
 
   people: {
+    create: (input: { name: string; email: string; password: string }) => http.post<Person>("/people", input),
     list: (params: {
       search?: string;
       departmentId?: string;

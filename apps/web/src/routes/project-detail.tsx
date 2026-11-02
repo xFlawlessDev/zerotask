@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { useProject, useProjectTasks, useUpdateProject, useTimeline, useSubmissions, useProjectActivity, useDeleteProject, useMilestoneActions } from "@/features/hooks";
+import { useProject, useProjectTasks, useUpdateProject, useTimeline, useSubmissions, useProjectActivity, useDeleteProject, useMilestoneActions, usePeopleLookup, useProjectMemberActions } from "@/features/hooks";
 import { useRequiredSession } from "@/features/session";
 import { Button, IconButton } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,6 +10,7 @@ import { DateField, SelectField, TextArea, TextField } from "@/components/ui/fie
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScheduleTab } from "@/features/project/schedule-tab";
 import { TaskEditor } from "@/features/project/task-editor";
+import { SubmitTaskDialog } from "@/features/project/submit-task-dialog";
 import { projectRoleAtLeast } from "@zerotask/domain";
 import { formatShortDate, formatDate, formatVariance } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -137,7 +138,7 @@ export default function ProjectDetailPage() {
           </TabsList>
 
           <TabsContent value="tasks">
-            <TasksPanel project={project} canEdit={capabilities.role === "admin" || projectRoleAtLeast(project.members.find((member) => member.userId === person.id)?.role, "member")} canManagePlan={capabilities.role === "admin" || projectRoleAtLeast(project.members.find((member) => member.userId === person.id)?.role, "manager")} />
+            <TasksPanel project={project} personId={person.id} canEdit={capabilities.role === "admin" || projectRoleAtLeast(project.members.find((member) => member.userId === person.id)?.role, "member")} canManagePlan={capabilities.role === "admin" || projectRoleAtLeast(project.members.find((member) => member.userId === person.id)?.role, "manager")} />
           </TabsContent>
 
           <TabsContent value="schedule">
@@ -157,7 +158,7 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="team">
-            <TeamPanel projectId={project.id} />
+            <TeamPanel projectId={project.id} canManage={capabilities.role === "admin" || projectRoleAtLeast(project.members.find((member) => member.userId === person.id)?.role, "manager")} />
           </TabsContent>
         </Tabs>
       </div>
@@ -183,9 +184,10 @@ function ProjectStatusLabelInline({ status }: { status: string }) {
 
 const STATUS_ORDER: TaskStatus[] = ["in_progress", "pending_review", "blocked", "not_started", "completed", "cancelled"];
 
-function TasksPanel({ project, canEdit, canManagePlan }: { project: import("@/lib/api/types").ProjectDetail; canEdit: boolean; canManagePlan: boolean }) {
+function TasksPanel({ project, personId, canEdit, canManagePlan }: { project: import("@/lib/api/types").ProjectDetail; personId: string; canEdit: boolean; canManagePlan: boolean }) {
   const { data, isLoading, error, refetch } = useProjectTasks(project.id);
   const [editing, setEditing] = useState<import("@/lib/api/types").Task | null | undefined>(undefined);
+  const [submitting, setSubmitting] = useState<import("@/lib/api/types").Task | null>(null);
 
   if (error) {
     return <ErrorState description="The task list could not be loaded." action={<Button onClick={() => void refetch()}>Try again</Button>} />;
@@ -253,13 +255,14 @@ function TasksPanel({ project, canEdit, canManagePlan }: { project: import("@/li
                   <span className="text-ink-muted">{task.totalFloatDays ?? "–"}d</span>
                 )}
               </td>
-              {canEdit && <td className="px-3 text-right"><Button size="sm" onClick={() => setEditing(task)} aria-label={`Manage ${task.code}: ${task.name}`}>Manage</Button></td>}
+              {canEdit && <td className="whitespace-nowrap px-3 text-right">{task.assigneeId === personId && !["pending_review", "completed", "cancelled"].includes(task.status) && <Button size="sm" onClick={() => setSubmitting(task)} aria-label={`Submit ${task.code} for review`}>Submit</Button>} <Button size="sm" onClick={() => setEditing(task)} aria-label={`Manage ${task.code}: ${task.name}`}>Manage</Button></td>}
             </tr>
           ))}
         </tbody>
       </table>
     </div>}
     {editing !== undefined && <TaskEditor project={project} task={editing} canManagePlan={canManagePlan} onClose={() => setEditing(undefined)} />}
+    {submitting && <SubmitTaskDialog task={submitting} onClose={() => setSubmitting(null)} />}
     </>
   );
 }
@@ -267,8 +270,9 @@ function TasksPanel({ project, canEdit, canManagePlan }: { project: import("@/li
 // --- submissions -------------------------------------------------------------
 
 function SubmissionsPanel({ projectId }: { projectId: string }) {
-  const { data, isLoading } = useSubmissions(projectId);
+  const { data, isLoading, error, refetch } = useSubmissions(projectId);
 
+  if (error) return <ErrorState description="Submissions could not be loaded." action={<Button onClick={() => void refetch()}>Try again</Button>} />;
   if (isLoading) return <LoadingState label="Loading submissions" />;
 
   const rows = data ?? [];
@@ -286,13 +290,14 @@ function SubmissionsPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="overflow-hidden rounded-panel border border-rule bg-surface">
+      <div className="flex items-center justify-between gap-3 border-b border-rule p-3"><p className="text-meta text-ink-muted">Submissions from project tasks</p><Button asChild size="sm"><Link to="/reviews">Open review queue</Link></Button></div>
       <ul className="divide-y divide-rule">
         {rows.map((submission) => (
-          <li key={submission.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-3 sm:h-(--row-height) sm:py-0">
-            <span className="tnum w-24 shrink-0 font-mono text-meta text-ink-muted">{submission.taskCode}</span>
-            <span className="min-w-0 flex-1 truncate text-compact text-ink">{submission.taskName}</span>
-            <span className="text-meta text-ink-muted">{submission.submitterName}</span>
-            <SubmissionStatusLabel status={submission.status} />
+          <li key={submission.id} className="px-3 py-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1"><span className="tnum font-mono text-meta text-ink-muted">{submission.taskCode}</span><span className="min-w-0 flex-1 text-compact font-medium text-ink">{submission.taskName}</span><SubmissionStatusLabel status={submission.status} /></div>
+            <p className="mt-1 text-meta text-ink-muted">{submission.submitterName ?? "Unknown"} · {submission.kind} · {formatShortDate(submission.createdAt.slice(0, 10))}{submission.progressPercent !== null ? ` · ${submission.progressPercent}%` : ""}</p>
+            {submission.note && <p className="mt-2 text-compact text-ink">{submission.note}</p>}
+            {submission.reviewers.length > 0 && <p className="mt-1 text-meta text-ink-muted">Reviewers: {submission.reviewers.map((reviewer) => `${reviewer.name ?? "Unknown"}${reviewer.decision ? ` (${reviewer.decision})` : " (waiting)"}`).join(", ")}</p>}
           </li>
         ))}
       </ul>
@@ -428,26 +433,31 @@ function ActivityPanel({ projectId }: { projectId: string }) {
 
 // --- team --------------------------------------------------------------------
 
-function TeamPanel({ projectId }: { projectId: string }) {
+function TeamPanel({ projectId, canManage }: { projectId: string; canManage: boolean }) {
   const { data: project } = useProject(projectId);
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState("");
+  const [role, setRole] = useState<"viewer" | "member" | "manager">("member");
+  const { data: people, isLoading: loadingPeople, error: peopleError } = usePeopleLookup(search);
+  const actions = useProjectMemberActions(projectId);
   const members = project?.members ?? [];
-
-  if (members.length === 0) {
-    return (
-      <div className="rounded-panel border border-rule bg-surface">
-        <EmptyState title="No members" description="Members can see the project and be assigned work in it." />
-      </div>
-    );
-  }
+  const available = (people ?? []).filter((person) => !members.some((member) => member.userId === person.id));
 
   return (
     <div className="overflow-hidden rounded-panel border border-rule bg-surface">
+      {canManage && <div className="flex flex-wrap items-end gap-3 border-b border-rule p-3">
+        <TextField label="Find a person" type="search" value={search} onChange={(event) => { setSearch(event.target.value); setSelected(""); }} placeholder="Name or email" />
+        <SelectField label="Person" value={selected} onChange={(event) => setSelected(event.target.value)} disabled={loadingPeople || !!peopleError}><option value="">{peopleError ? "Could not load people" : loadingPeople ? "Loading…" : "Choose a person"}</option>{available.map((person) => <option key={person.id} value={person.id}>{person.name ?? person.email} ({person.email})</option>)}</SelectField>
+        <SelectField label="Project role" value={role} onChange={(event) => setRole(event.target.value as typeof role)}><option value="viewer">Viewer</option><option value="member">Member</option><option value="manager">Manager</option></SelectField>
+        <Button variant="primary" disabled={!selected || actions.add.isPending} onClick={() => { actions.add.mutate({ userId: selected, role }, { onSuccess: () => { setSelected(""); setSearch(""); } }); }}>Add member</Button>
+      </div>}
       <ul className="divide-y divide-rule">
         {members.map((member) => (
           <li key={member.userId} className="flex h-(--row-height) items-center gap-3 px-3">
             <span className="min-w-0 flex-1 truncate text-compact text-ink">{member.name ?? member.email}</span>
-            <span className="text-meta text-ink-muted">{member.role}</span>
+            {canManage && member.userId !== project?.ownerId ? <select aria-label={`Project role of ${member.name ?? member.email}`} value={member.role} disabled={actions.updateRole.isPending} onChange={(event) => actions.updateRole.mutate({ userId: member.userId, role: event.target.value as "viewer" | "member" | "manager" })} className="h-8 rounded-control border border-input bg-surface px-2 text-meta"><option value="viewer">Viewer</option><option value="member">Member</option><option value="manager">Manager</option>{member.role === "owner" && <option value="owner">Owner</option>}</select> : <span className="text-meta text-ink-muted">{member.role}</span>}
             <span className="tnum hidden text-meta text-ink-muted sm:block">{member.openTasks} open</span>
+            {canManage && member.userId !== project?.ownerId && <Button size="sm" variant="danger" disabled={actions.remove.isPending} onClick={() => { if (window.confirm(`Remove ${member.name ?? member.email} from this project? Their assigned tasks will become unassigned.`)) actions.remove.mutate(member.userId); }}>Remove</Button>}
           </li>
         ))}
       </ul>

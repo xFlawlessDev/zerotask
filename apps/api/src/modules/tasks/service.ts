@@ -1023,11 +1023,10 @@ export const TaskService = {
             isNull(tasks.deletedAt),
             isNull(projects.deletedAt),
             sql`${tasks.status} in ${OPEN}`,
-            lte(sql`coalesce(${tasks.plannedEndDate}, ${tasks.earlyFinish}, '9999-12-31'::date)`, to),
+            options.to ? lte(sql`coalesce(${tasks.plannedEndDate}, ${tasks.earlyFinish}, '9999-12-31'::date)`, options.to) : undefined,
           ),
         )
-        .orderBy(asc(sql`coalesce(${tasks.plannedEndDate}, '9999-12-31'::date)`))
-        .limit(300),
+        .orderBy(asc(sql`coalesce(${tasks.plannedEndDate}, ${tasks.earlyFinish}, '9999-12-31'::date)`)),
       db
         .select({ status: tasks.status, value: count() })
         .from(tasks)

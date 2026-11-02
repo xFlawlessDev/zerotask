@@ -2,8 +2,9 @@ import { useState } from "react";
 import { useRequiredSession } from "@/features/session";
 import { usePeople, useDepartments, usePersonActions, useDepartmentActions, useTemplates } from "@/features/hooks";
 import { Button, IconButton } from "@/components/ui/button";
-import { SelectField, TextField } from "@/components/ui/field";
-import { EmptyState, Figure, LoadingState, PageHeader } from "@/components/ui/surface";
+import { PasswordField, SelectField, TextField } from "@/components/ui/field";
+import { EmptyState, ErrorState, Figure, LoadingState, PageHeader } from "@/components/ui/surface";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { IconPlus, IconTrash } from "@/components/icon";
 import { initials } from "@/lib/format";
 import { ROLES, ROLE_LABEL } from "@zerotask/domain";
@@ -18,10 +19,16 @@ import type { Role } from "@zerotask/domain";
  */
 export default function AdminPage() {
   const { person, capabilities } = useRequiredSession();
-  const { update: updatePerson, remove: removePerson } = usePersonActions();
+  const { create: createPerson, update: updatePerson, remove: removePerson } = usePersonActions();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const { create: createDepartment, remove: removeDepartment } = useDepartmentActions();
 
-  const { data: peopleData, isLoading } = usePeople({});
+  const { data: peopleData, isLoading, error, refetch } = usePeople({ search, page });
   const { data: departments } = useDepartments();
   const { data: templates } = useTemplates();
 
@@ -48,7 +55,7 @@ export default function AdminPage() {
         description={`Signed in as ${person.name ?? person.email}, with the admin role.`}
         meta={
           <>
-            <Figure value={people.length} label="people" />
+            <Figure value={peopleData?.total ?? 0} label="people" />
             <Figure value={departments?.length ?? 0} label="departments" />
             <Figure value={templates?.length ?? 0} label="templates" />
           </>
@@ -63,7 +70,8 @@ export default function AdminPage() {
             run projects, admin changes the workspace itself.
           </p>
 
-          {isLoading ? (
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><TextField label="Search people" type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} /><Button variant="primary" onClick={() => setCreateOpen(true)}>Add user</Button></div>
+          {error ? <ErrorState description="People could not be loaded." action={<Button onClick={() => void refetch()}>Try again</Button>} /> : isLoading ? (
             <LoadingState label="Loading people" />
           ) : (
             <div className="overflow-hidden rounded-panel border border-rule bg-surface">
@@ -86,6 +94,7 @@ export default function AdminPage() {
                     <select
                       aria-label={`Role of ${row.name ?? row.email}`}
                       value={row.role}
+                      disabled={row.id === person.id || updatePerson.isPending}
                       onChange={(event) =>
                         updatePerson.mutate({ id: row.id, body: { role: event.target.value as Role } })
                       }
@@ -97,9 +106,11 @@ export default function AdminPage() {
                         </option>
                       ))}
                     </select>
+                    <select aria-label={`Department of ${row.name ?? row.email}`} value={row.departmentId ?? ""} disabled={updatePerson.isPending} onChange={(event) => updatePerson.mutate({ id: row.id, body: { departmentId: event.target.value || null } })} className="h-7 max-w-32 rounded-control border border-input bg-surface px-2 text-meta"><option value="">No department</option>{departments?.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select>
                     <IconButton
                       label={`Remove ${row.name ?? row.email}`}
                       variant="danger"
+                      disabled={row.id === person.id || removePerson.isPending}
                       onClick={() => {
                         if (
                           window.confirm(
@@ -115,6 +126,7 @@ export default function AdminPage() {
                   </li>
                 ))}
               </ul>
+              {(peopleData?.total ?? 0) > 50 && <div className="flex items-center justify-between border-t border-rule p-3 text-meta text-ink-muted"><span>Page {page}</span><div className="flex gap-2"><Button size="sm" disabled={page === 1} onClick={() => setPage((value) => value - 1)}>Previous</Button><Button size="sm" disabled={page * 50 >= (peopleData?.total ?? 0)} onClick={() => setPage((value) => value + 1)}>Next</Button></div></div>}
             </div>
           )}
         </section>
@@ -132,6 +144,13 @@ export default function AdminPage() {
           />
         </section>
       </div>
+      <Dialog open={createOpen} onOpenChange={(open) => { if (!createPerson.isPending) setCreateOpen(open); }}><DialogContent><DialogHeader><DialogTitle>Add user</DialogTitle><DialogDescription>Create a staff account. You can change its role and department after creation.</DialogDescription></DialogHeader>
+        <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); createPerson.mutate({ name: name.trim(), email: email.trim(), password }, { onSuccess: () => { setCreateOpen(false); setName(""); setEmail(""); setPassword(""); setSearch(""); setPage(1); } }); }}>
+          <TextField label="Name" required minLength={2} maxLength={80} value={name} onChange={(event) => setName(event.target.value)} />
+          <TextField label="Email" type="email" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} />
+          <PasswordField label="Initial password" required minLength={10} maxLength={128} autoComplete="new-password" hint="At least 10 characters." value={password} onChange={(event) => setPassword(event.target.value)} />
+          <DialogFooter><Button onClick={() => setCreateOpen(false)} disabled={createPerson.isPending}>Cancel</Button><Button type="submit" variant="primary" disabled={createPerson.isPending}>{createPerson.isPending ? "Creating…" : "Create user"}</Button></DialogFooter>
+        </form></DialogContent></Dialog>
     </>
   );
 }

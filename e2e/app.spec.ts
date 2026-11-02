@@ -87,7 +87,7 @@ test.describe("projects", () => {
     await page.getByRole("link", { name: /Atlas: warehouse rollout/ }).click();
     await expect(page.getByRole("heading", { level: 1 })).toContainText("ZR-001");
     await expect(page.getByRole("tab", { name: "Tasks" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByRole("cell", { name: "Build the receiving adapter" })).toBeVisible();
+    await expect(page.getByText("Build the receiving adapter", { exact: true })).toBeVisible();
   });
 
   test("creating a project appears in the list", async ({ asLead: page }) => {
@@ -212,6 +212,38 @@ test.describe("schedule", () => {
 });
 
 test.describe("my work", () => {
+  test("a manager can add a teammate, move a task and submit it for review", async ({ page }) => {
+    await signIn(page, people.manager);
+    await page.goto("/projects");
+    await page.getByRole("button", { name: "New project" }).click();
+    const projectDialog = page.getByRole("dialog", { name: "New project" });
+    await projectDialog.getByLabel("Project name").fill("Team workflow test");
+    await projectDialog.getByRole("button", { name: "Create project" }).click();
+    await page.getByRole("link", { name: /Team workflow test/ }).click();
+    await page.getByRole("tab", { name: "Team" }).click();
+    await page.getByLabel("Find a person").fill("Budi Santoso");
+    await expect(page.getByLabel("Person", { exact: true }).getByRole("option", { name: /Budi Santoso/ })).toHaveCount(1);
+    await page.getByLabel("Person", { exact: true }).selectOption({ label: "Budi Santoso (budi@zerotask.dev)" });
+    await page.getByRole("button", { name: "Add member" }).click();
+    await expect(page.getByLabel("Project role of Budi Santoso")).toBeVisible();
+    await page.getByLabel("Project role of Budi Santoso").selectOption("manager");
+    await expect(page.getByLabel("Project role of Budi Santoso")).toHaveValue("manager");
+    await page.getByRole("tab", { name: "Tasks" }).click();
+    await page.getByRole("button", { name: "New task" }).click();
+    const taskDialog = page.getByRole("dialog");
+    await taskDialog.getByLabel("Task name").fill("Workflow task");
+    await taskDialog.getByLabel("Assignee").selectOption({ label: "Iman Kusuma" });
+    await taskDialog.getByLabel("Reviewer").selectOption({ label: "Budi Santoso" });
+    await taskDialog.getByRole("button", { name: "Create task" }).click();
+    await page.goto("/my-work");
+    await page.getByLabel("Change status of Workflow task").selectOption("in_progress");
+    await expect(page.getByLabel("Change status of Workflow task")).toHaveValue("in_progress");
+    await page.locator("li", { hasText: "Workflow task" }).getByRole("button", { name: "Submit" }).click();
+    await page.getByRole("dialog").getByLabel("Notes for reviewer").fill("Ready for review");
+    await page.getByRole("dialog").getByRole("button", { name: "Submit for review" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Waiting for a reviewer" }).getByText("Workflow task")).toBeVisible();
+  });
   test("a staff member sees their assigned tasks grouped by status", async ({ page }) => {
     await signIn(page, people.staff);
     await page.goto("/my-work");
@@ -274,6 +306,22 @@ test.describe("access control", () => {
     await page.goto("/admin");
     await expect(page.getByRole("heading", { name: "Roles" })).toBeVisible();
     await expect(page.getByRole("combobox", { name: /Role of Budi Santoso/ })).toBeVisible();
+  });
+
+  test("an admin creates an account and changes its role", async ({ page }) => {
+    await signIn(page, people.admin);
+    await page.goto("/admin");
+    await page.getByRole("button", { name: "Add user" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add user" });
+    await dialog.getByLabel(/^Name/).fill("New Team Member");
+    await dialog.getByLabel("Email").fill("new-team-member@example.com");
+    await dialog.getByLabel("Initial password").fill("test-password-123");
+    await dialog.getByRole("button", { name: "Create user" }).click();
+    await expect(dialog).toHaveCount(0);
+    const role = page.getByLabel("Role of New Team Member");
+    await expect(role).toHaveValue("staff");
+    await role.selectOption("lead");
+    await expect(role).toHaveValue("lead");
   });
 });
 

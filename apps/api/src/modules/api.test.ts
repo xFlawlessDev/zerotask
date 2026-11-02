@@ -661,10 +661,14 @@ describe("API", () => {
         assignedToId: harness.userId,
         plannedEndDate: new Date().toISOString().slice(0, 10),
       });
+      await request(harness.api, harness.token, "POST", `/projects/${projectId}/tasks`, {
+        name: "Far future task", assignedToId: harness.userId, plannedEndDate: "2099-12-31",
+      });
 
       const { body } = await request(harness.api, harness.token, "GET", "/my-work");
       const payload = body as { items: { name: string }[] };
       expect(payload.items.map((item) => item.name)).toContain("Assigned to me");
+      expect(payload.items.map((item) => item.name)).toContain("Far future task");
     });
 
     it("counts the overview from real rows", async () => {
@@ -688,6 +692,16 @@ describe("API", () => {
   });
 
   describe("people and departments", () => {
+    it("lets only admins create a sign-in account", async () => {
+      const input = { name: "New colleague", email: "new-colleague@example.com", password: "safe-password-123" };
+      const forbidden = await request(harness.api, harness.token, "POST", "/people", input);
+      expect(forbidden.status).toBe(403);
+      const created = await request(admin.api, admin.token, "POST", "/people", input);
+      expect(created.status).toBe(200);
+      expect(created.body?.role).toBe("staff");
+      const signedIn = await auth.api.signInEmail({ body: { email: input.email, password: input.password } });
+      expect(signedIn.user.email).toBe(input.email);
+    });
     it("returns a department list any signed-in person can read", async () => {
       const { status, body } = await request(
         harness.api,

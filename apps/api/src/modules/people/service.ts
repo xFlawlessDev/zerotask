@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Role } from "@zerotask/domain";
 import type { Database } from "../../db/client.ts";
-import { departments, projectMembers, tasks, users } from "../../db/schema/index.ts";
+import { departments, projectMembers, projects, tasks, users } from "../../db/schema/index.ts";
 import { errors } from "../../lib/errors.ts";
 import { cref } from "../../lib/sql.ts";
 
@@ -189,6 +189,8 @@ export const PeopleService = {
    */
   async remove(db: Database, id: string, actorId: string) {
     if (id === actorId) throw errors.rule("CANNOT_REMOVE_SELF", "You cannot remove your own account");
+    const [owned] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.ownerId, id), isNull(projects.deletedAt))).limit(1);
+    if (owned) throw errors.rule("PERSON_OWNS_PROJECTS", "This person owns projects. Transfer or remove those projects first.");
 
     const [row] = await db
       .update(users)
@@ -199,6 +201,8 @@ export const PeopleService = {
     if (!row) throw errors.notFound("Person");
 
     await db.delete(projectMembers).where(eq(projectMembers.userId, id));
+    await db.update(tasks).set({ assignedToId: null, updatedAt: new Date() }).where(eq(tasks.assignedToId, id));
+    await db.update(tasks).set({ reviewerId: null, updatedAt: new Date() }).where(eq(tasks.reviewerId, id));
     return { ok: true as const };
   },
 

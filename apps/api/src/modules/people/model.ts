@@ -18,6 +18,7 @@ export const DepartmentModel = {
 };
 
 export const UserModel = {
+  create: t.Object({ name: text(80, 2), email: t.String({ format: "email", maxLength: 254 }), password: t.String({ minLength: 10, maxLength: 128 }) }),
   listQuery: t.Object({
     limit: t.Optional(t.Integer({ minimum: 1, maximum: 200, default: 50 })),
     offset: t.Optional(t.Integer({ minimum: 0, default: 0 })),

@@ -1,12 +1,14 @@
 import { Elysia } from "elysia";
 import type { Database } from "../../db/client.ts";
+import type { Auth } from "../../db/auth.ts";
 import type { SessionUser } from "../../db/auth.ts";
 import type { createGuards } from "../../lib/guards.ts";
 import { DepartmentModel, UserModel } from "./model.ts";
 import { PeopleService } from "./service.ts";
 import { idParams, okResponse } from "../../lib/validation.ts";
+import { errors } from "../../lib/errors.ts";
 
-type Deps = { db: Database };
+type Deps = { db: Database; auth: Auth };
 type Guards = ReturnType<typeof createGuards>;
 
 /**
@@ -40,11 +42,18 @@ function directoryRoutes(deps: Deps, guards: Guards) {
       signedIn: true,
       query: UserModel.listQuery,
     })
+    .post("/", async ({ body }) => {
+      const created = await deps.auth.api.signUpEmail({ body: { name: body.name.trim(), email: body.email.trim().toLowerCase(), password: body.password } });
+      return PeopleService.byId(deps.db, created.user.id);
+    }, { admin: true, body: UserModel.create })
     .get("/:id", ({ params }) => PeopleService.byId(deps.db, params.id), {
       signedIn: true,
       params: idParams,
     })
-    .patch("/:id", ({ params, body }) => PeopleService.updateByAdmin(deps.db, params.id, body), {
+    .patch("/:id", ({ params, body, user }) => {
+      if (params.id === (user as SessionUser).id && body.role && body.role !== "admin") throw errors.rule("CANNOT_DEMOTE_SELF", "Another admin must change your role");
+      return PeopleService.updateByAdmin(deps.db, params.id, body);
+    }, {
       admin: true,
       params: idParams,
       body: UserModel.updateByAdmin,

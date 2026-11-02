@@ -4,6 +4,7 @@ import type { SessionUser } from "../../db/auth.ts";
 import type { createGuards } from "../../lib/guards.ts";
 import { idParams, okResponse } from "../../lib/validation.ts";
 import { ProjectModel } from "./model.ts";
+import { ID } from "../../lib/validation.ts";
 import { ProjectService } from "./service.ts";
 import { projectRoleAtLeast } from "@zerotask/domain";
 
@@ -92,7 +93,7 @@ export function projectsModule(deps: Deps, guards: Guards) {
         projectRole: { param: "projectId", minimum: "manager" },
         params: t.Object({
           projectId: t.String({ format: "uuid" }),
-          memberId: t.String({ format: "uuid" }),
+          memberId: ID,
         }),
         body: ProjectModel.updateMember,
       },
@@ -105,7 +106,7 @@ export function projectsModule(deps: Deps, guards: Guards) {
         projectRole: { param: "projectId", minimum: "manager" },
         params: t.Object({
           projectId: t.String({ format: "uuid" }),
-          memberId: t.String({ format: "uuid" }),
+          memberId: ID,
         }),
         response: { 200: okResponse },
       },

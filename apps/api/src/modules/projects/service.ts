@@ -485,6 +485,10 @@ export const ProjectService = {
         and(eq(tasks.projectId, projectId), eq(tasks.assignedToId, userId), isNull(tasks.deletedAt)),
       );
 
+    await db.update(tasks).set({ reviewerId: null, updatedAt: new Date() }).where(
+      and(eq(tasks.projectId, projectId), eq(tasks.reviewerId, userId), isNull(tasks.deletedAt)),
+    );
+
     await recordActivity(db, {
       projectId,
       actorId,
