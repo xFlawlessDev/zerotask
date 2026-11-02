@@ -1,0 +1,25 @@
+node_modules/
+.DS_Store
+
+# build output
+dist/
+*.tsbuildinfo
+
+# local database files (PGlite data directory)
+.data/
+*.pgdata
+
+# env
+.env
+.env.local
+.env.*.local
+
+# editor
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# end-to-end test output
+test-results/
+playwright-report/
+playwright/.cache/
