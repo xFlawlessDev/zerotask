@@ -73,7 +73,7 @@ const summaryColumns = {
    */
   progressPercent: sql<number>`coalesce((
     select round(
-      100.0 * sum(${cref("tasks", "progress_percent")}::numeric * ${cref("tasks", "duration_days")})
+      sum(${cref("tasks", "progress_percent")}::numeric * ${cref("tasks", "duration_days")})
       / nullif(sum(${cref("tasks", "duration_days")}), 0)
     )::int
     from ${sql.identifier("tasks")}

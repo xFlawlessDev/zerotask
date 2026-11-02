@@ -205,6 +205,15 @@ describe("API", () => {
   });
 
   describe("tasks and scheduling", () => {
+    it("reports duration-weighted project progress as a percentage", async () => {
+      const created = await request(harness.api, harness.token, "POST", "/projects", { name: "Progress example" });
+      const projectId = created.body?.id as string;
+      const first = await request(harness.api, harness.token, "POST", `/projects/${projectId}/tasks`, { name: "First part", durationDays: 3 });
+      await request(harness.api, harness.token, "POST", `/projects/${projectId}/tasks`, { name: "Second part", durationDays: 1 });
+      await request(harness.api, harness.token, "PATCH", `/projects/${projectId}/tasks/${first.body?.id}`, { progressPercent: 40 });
+      const project = await request(harness.api, harness.token, "GET", `/projects/${projectId}`);
+      expect(project.body?.progressPercent).toBe(30);
+    });
     async function makeProject(withTask = false) {
       const created = await request(harness.api, harness.token, "POST", "/projects", {
         name: "Delivery programme",
