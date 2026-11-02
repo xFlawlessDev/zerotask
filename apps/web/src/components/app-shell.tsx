@@ -5,6 +5,7 @@ import { useFavorites, useOverview } from "@/features/hooks";
 import { TopBar } from "@/components/top-bar";
 import { IconRail, IconStar } from "@/components/icon";
 import { cn } from "@/lib/utils";
+import logo from "@/assets/logo.png";
 import type { ComponentType } from "react";
 import {
   IconAdmin,
@@ -145,12 +146,12 @@ export function AppShell({ title, children }: { title: string; children: React.R
       >
         <div className="flex h-(--topbar-height) items-center gap-2 border-b border-rule px-3">
           <Link to="/" className="flex min-w-0 items-center gap-2" aria-label="Zero Task home">
-            <span
+            <img
+              src={logo}
+              alt=""
               aria-hidden="true"
-              className="flex size-7 shrink-0 items-center justify-center rounded-control bg-accent-ink text-[13px] font-bold text-on-accent"
-            >
-              Z
-            </span>
+              className="size-7 shrink-0 rounded-control object-contain"
+            />
             {!collapsed && (
               <span className="truncate text-compact font-semibold tracking-tight text-ink">
                 Zero Task

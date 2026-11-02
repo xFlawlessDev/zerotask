@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { TextField, PasswordField } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
+import logo from "@/assets/logo.png";
 
 /**
  * The sign-in screen.
@@ -64,12 +65,12 @@ export default function AuthPage() {
     <div className="grid min-h-dvh place-items-center bg-canvas px-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex items-center gap-2.5">
-          <span
+          <img
+            src={logo}
+            alt=""
             aria-hidden="true"
-            className="flex size-8 items-center justify-center rounded-control bg-accent-ink text-[15px] font-bold text-on-accent"
-          >
-            Z
-          </span>
+            className="size-8 shrink-0 rounded-control object-contain"
+          />
           <div>
             <p className="text-section font-semibold tracking-tight text-ink">Zero Task</p>
             <p className="text-meta text-ink-muted">Project delivery, scheduled and reviewed.</p>
