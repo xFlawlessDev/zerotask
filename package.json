@@ -10,15 +10,19 @@
     "dev:api": "bun run --cwd apps/api dev",
     "dev:web": "bun run --cwd apps/web dev",
     "build": "bun run --cwd apps/web build",
-    "typecheck": "bun run --cwd packages/domain typecheck && bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck",
+    "typecheck": "bun run --cwd packages/domain typecheck && bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck && tsc --noEmit -p tsconfig.e2e.json",
     "test": "bun run --cwd apps/api test",
     "db:generate": "bun run --cwd apps/api db:generate",
     "db:migrate": "bun run --cwd apps/api db:migrate",
     "db:seed": "bun run --cwd apps/api db:seed",
     "db:reset": "bun run --cwd apps/api db:reset",
-    "check": "bun run typecheck && bun run test && bun run build"
+    "check": "bun run typecheck && bun run test && bun run build",
+    "dev": "bun scripts/dev.ts",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/bun": "^1.3.14",
     "typescript": "5.9.3"
   }
