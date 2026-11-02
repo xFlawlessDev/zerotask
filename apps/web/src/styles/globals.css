@@ -1,0 +1,275 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is([data-theme="dark"] *), &:is([data-theme="dark"]));
+
+/**
+ * Design tokens, from DESIGN.md, expressed in shadcn's variable names so the
+ * component library and the design direction are the same thing.
+ *
+ * Every text pairing is verified in scripts/contrast.ts, which fails if a colour
+ * drops under its WCAG AA minimum. Changing a value here means changing it there
+ * too.
+ *
+ * The light theme is the default: this is a tool people read data in all day, and
+ * a bright ground keeps long sessions from glaring.
+ */
+
+:root {
+  /* Two cores (warm paper, ink) plus one accent (deep blue). */
+  --canvas: #f4f4f0;
+  --surface: #ffffff;
+  --surface-sunk: #EDEDE7;
+  --ink: #14181d;
+  --ink-muted: #545b63;
+  --ink-faint: #767d85;
+  --rule: #d8d8d0;
+
+  --accent-ink: #17457f;
+  --accent-wash: #e8eef7;
+  --on-accent: #ffffff;
+
+  --danger: #9a2b1e;
+  --caution: #7a4a00;
+  --settled: #2a5b41;
+
+  /* shadcn's contract, mapped onto the palette above. */
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --primary: var(--accent-ink);
+  --primary-foreground: var(--on-accent);
+  --secondary: var(--surface-sunk);
+  --secondary-foreground: var(--ink);
+  --muted: var(--surface-sunk);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--accent-wash);
+  --accent-foreground: var(--accent-ink);
+  --destructive: var(--danger);
+  --destructive-foreground: #ffffff;
+  --border: var(--rule);
+  --input: var(--rule);
+  --ring: var(--accent-ink);
+
+  /* Radius is not uniform: a control and a panel are different objects. */
+  --radius: 0.375rem;
+  --radius-mark: 2px;
+  --radius-control: 4px;
+  --radius-panel: 6px;
+
+  --nav-width: 240px;
+  --nav-width-collapsed: 56px;
+  --topbar-height: 48px;
+  --row-height: 40px;
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --canvas: #0e1114;
+  --surface: #16191d;
+  --surface-sunk: #0a0c0f;
+  --ink: #e9e9e3;
+  --ink-muted: #a2a9b1;
+  --ink-faint: #8a9199;
+  --rule: #2a2f35;
+
+  --accent-ink: #8fb4e8;
+  --accent-wash: #1b2431;
+  --on-accent: #0e1114;
+
+  --danger: #f0917f;
+  --caution: #e3b661;
+  --settled: #7fc49b;
+
+  --destructive-foreground: #0e1114;
+
+  color-scheme: dark;
+}
+
+[data-density="compact"] {
+  --row-height: 32px;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  /**
+   * `muted` is a background tone. Text on top of it is always
+   * `muted-foreground`, never `text-muted`: a background colour as a text colour
+   * is unreadable, which is the failure this rule exists to prevent.
+   */
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* The palette's own names, so components can say what they mean. */
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-sunk: var(--surface-sunk);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-faint: var(--ink-faint);
+  --color-rule: var(--rule);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-wash: var(--accent-wash);
+  --color-on-accent: var(--on-accent);
+  --color-danger: var(--danger);
+  --color-caution: var(--caution);
+  --color-settled: var(--settled);
+
+  --radius-mark: var(--radius-mark);
+  --radius-control: var(--radius-control);
+  --radius-panel: var(--radius-panel);
+  --radius-sm: var(--radius-control);
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-panel);
+  --radius-xl: var(--radius-panel);
+
+  --font-sans: "Public Sans Variable", "Public Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  --text-label: 0.6875rem;
+  --text-label--line-height: 1.2;
+  --text-meta: 0.75rem;
+  --text-meta--line-height: 1.35;
+  --text-compact: 0.8125rem;
+  --text-compact--line-height: 1.45;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.5;
+  --text-section: 1rem;
+  --text-section--line-height: 1.35;
+  --text-title: 1.25rem;
+  --text-title--line-height: 1.25;
+  --text-figure: 1.75rem;
+  --text-figure--line-height: 1.1;
+
+  /**
+   * The only shadow in the product. Menus and dialogs genuinely float above the
+   * page; everything else is divided by the hairline.
+   */
+  --shadow-float: 0 1px 2px rgb(20 24 29 / 0.06), 0 8px 24px -8px rgb(20 24 29 / 0.18);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /**
+   * Tabular figures everywhere a number lives. A column of dates or durations that
+   * does not align has to be read one cell at a time.
+   */
+  .tnum,
+  time,
+  td,
+  th {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  /* One pointer rule for the app: the affordance belongs in the base layer. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary,
+  select:not(:disabled),
+  label[for],
+  a[href] {
+    cursor: pointer;
+  }
+
+  :disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
+  /**
+   * A 2px ring at 2px offset, in the accent, in both themes. Never removed: the
+   * replacement is always better than the browser default.
+   */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--accent-wash);
+    color: var(--accent-ink);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-weight: 600;
+    letter-spacing: -0.011em;
+    margin: 0;
+  }
+
+  /**
+   * Motion is limited to state changes. Anything longer than a colour or an
+   * opacity fade is turned off when the person asks for less movement.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /**
+   * The identity motif: a single hairline that separates structure, never page
+   * texture. One rule can divide a header, a row, or a panel split.
+   */
+  .rule-y {
+    border-block-end: 1px solid var(--rule);
+  }
+
+  .rule-r {
+    border-inline-end: 1px solid var(--rule);
+  }
+
+  /** The one place a floating surface is allowed to lift. */
+  .float {
+    box-shadow: var(--shadow-float);
+  }
+}
