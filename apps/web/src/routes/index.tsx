@@ -3,7 +3,7 @@ import { useOverview, useMyWork, useUpcoming } from "@/features/hooks";
 import { useRequiredSession } from "@/features/session";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Figure, LoadingState, EmptyState, PageHeader } from "@/components/ui/surface";
+import { Figure, LoadingState, EmptyState, ErrorState, PageHeader } from "@/components/ui/surface";
 import { StatusLabel } from "@/components/ui/status";
 import { IconArrowRight, IconOverdue } from "@/components/icon";
 import { formatDate, formatShortDate } from "@/lib/format";
@@ -19,8 +19,8 @@ import type { TaskStatus } from "@zerotask/domain";
 export default function OverviewPage() {
   const { person } = useRequiredSession();
   const { data: overview, isLoading, error, refetch } = useOverview();
-  const { data: myWork } = useMyWork();
-  const { data: upcoming } = useUpcoming(7);
+  const { data: myWork, isError: myWorkError, refetch: refetchMyWork } = useMyWork();
+  const { data: upcoming, isError: upcomingError, refetch: refetchUpcoming } = useUpcoming(7);
 
   const greeting = (
     <p className="mt-1 text-compact text-ink-muted">
@@ -30,17 +30,15 @@ export default function OverviewPage() {
 
   if (error) {
     return (
-      <PageHeader
-        title="Overview"
-        description={greeting}
-        actions={<Button onClick={() => void refetch()}>Try again</Button>}
-      />
+      <><PageHeader title="Overview" description={greeting} />
+        <ErrorState description="We couldn't load your overview. Check your connection and try again." action={<Button onClick={() => void refetch()}>Try again</Button>} />
+      </>
     );
   }
 
   if (isLoading || !overview) {
     return (
-      <PageHeader title="Overview" description={greeting} />
+      <><PageHeader title="Overview" description={greeting} /><LoadingState label="Loading overview" /></>
     );
   }
 
@@ -111,7 +109,9 @@ export default function OverviewPage() {
                 </Button>
               }
             />
-            {upcoming === undefined ? (
+            {upcomingError ? (
+              <ErrorState description="We couldn't load your upcoming tasks." action={<Button size="sm" onClick={() => void refetchUpcoming()}>Try again</Button>} />
+            ) : upcoming === undefined ? (
               <LoadingState label="Loading your tasks" />
             ) : upcoming.length === 0 ? (
               <EmptyState
@@ -209,7 +209,9 @@ export default function OverviewPage() {
               title="Your board"
               description="Everything assigned to you, grouped the way the board groups it"
             />
-            {myWork === undefined ? (
+            {myWorkError ? (
+              <ErrorState description="We couldn't load your assigned work." action={<Button size="sm" onClick={() => void refetchMyWork()}>Try again</Button>} />
+            ) : myWork === undefined ? (
               <LoadingState label="Loading your board" />
             ) : myWork.items.length === 0 ? (
               <EmptyState

@@ -378,7 +378,7 @@ export function useLabelActions(projectId: string) {
 
 export function useCreateTask(projectId: string) {
   return useAction((input: Parameters<typeof api.tasks.create>[1]) => api.tasks.create(projectId, input), {
-    invalidate: [["projects", projectId, "tasks"], ["projects", projectId, "schedule"], ["overview"], ["my-work"]],
+    invalidate: [["projects"], ["overview"], ["my-work"]],
     success: "Task created",
   });
 }
@@ -386,10 +386,9 @@ export function useCreateTask(projectId: string) {
 export function useUpdateTask(projectId: string, taskId: string) {
   return useAction((input: Parameters<typeof api.tasks.update>[2]) => api.tasks.update(projectId, taskId, input), {
     invalidate: [
-      ["projects", projectId, "tasks"],
-      ["projects", projectId, "tasks", taskId],
-      ["projects", projectId, "schedule"],
+      ["projects"],
       ["my-work"],
+      ["overview"],
     ],
     success: "Task saved",
   });
@@ -407,7 +406,7 @@ export function useMoveTask(projectId: string) {
 
 export function useDeleteTask(projectId: string) {
   return useAction((taskId: string) => api.tasks.remove(projectId, taskId), {
-    invalidate: [["projects", projectId, "tasks"], ["projects", projectId, "schedule"], ["overview"]],
+    invalidate: [["projects"], ["overview"], ["my-work"]],
     success: "Task deleted",
   });
 }

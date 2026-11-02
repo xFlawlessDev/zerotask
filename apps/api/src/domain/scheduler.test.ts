@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   computeSchedule,
+  calendarWithHolidays,
   fromDayNumber,
   shiftWorkingDays,
   toDayNumber,
@@ -33,6 +34,16 @@ function planned(tasks: ScheduleTask[], dependencies: Parameters<typeof computeS
 }
 
 describe("calendar arithmetic", () => {
+  it("delays dependent tasks for holidays without counting a weekend twice", () => {
+    const tasks = [task("a", 3), task("b", 1)];
+    const links = [{ predecessorId: "a", successorId: "b", type: "fs" as const, lagDays: 0 }];
+    const options = { basis: "planned" as const, projectStartDate: MONDAY, today: MONDAY };
+    const baseline = computeSchedule(tasks, links, options);
+    const withHolidays = computeSchedule(tasks, links, { ...options, calendar: calendarWithHolidays(["2026-11-03", "2026-11-07"]) });
+    expect(baseline.ok && baseline.result.calculatedEndDate).toBe("2026-11-05");
+    expect(withHolidays.ok && withHolidays.result.calculatedEndDate).toBe("2026-11-06");
+    expect(withHolidays.ok && withHolidays.result.tasks.find((item) => item.id === "b")?.startDate).toBe("2026-11-06");
+  });
   it("allows no working days on Saturday", () => {
     expect(weekdayCalendar.isWorkingDay(toDayNumber("2026-11-07"))).toBe(false);
   });

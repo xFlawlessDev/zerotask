@@ -302,6 +302,7 @@ export const api = {
   },
 
   schedule: {
+    holidayComparison: (projectId: string) => http.get<import("./types").HolidayComparison>(`/projects/${projectId}/schedule/holiday-comparison`),
     get: (projectId: string) => http.get<ScheduleSummary>(`/projects/${projectId}/schedule`),
     timeline: (projectId: string) => http.get<Timeline>(`/projects/${projectId}/schedule/timeline`),
     run: (projectId: string) => http.post<ScheduleSummary>(`/projects/${projectId}/schedule/run`),

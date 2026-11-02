@@ -8,7 +8,8 @@ import {
   tasks,
   users,
 } from "../../db/schema/index.ts";
-import { computeSchedule, fromDayNumber, toDayNumber, workingDaysBetween, type ScheduleError } from "../../domain/scheduler.ts";
+import { calendarWithHolidays, computeSchedule, fromDayNumber, toDayNumber, workingDaysBetween, type ScheduleError } from "../../domain/scheduler.ts";
+import { indonesiaHolidays, type Holiday } from "./holidays.ts";
 import { errors } from "../../lib/errors.ts";
 import { notify, projectAudience, recordActivity } from "../../lib/events.ts";
 import { TaskService } from "../tasks/service.ts";
@@ -38,6 +39,35 @@ function describeScheduleError(error: ScheduleError): never {
 }
 
 export const SchedulingService = {
+  async holidayComparison(db: Database, projectId: string) {
+    const { rows, links } = await TaskService.loadGraph(db, projectId);
+    const [project] = await db.select({ kickoffDate: projects.kickoffDate }).from(projects).where(eq(projects.id, projectId));
+    if (!project) throw errors.notFound("Project");
+    const options = { basis: "planned" as const, projectStartDate: project.kickoffDate };
+    const baseline = computeSchedule(rows, links, options);
+    if (!baseline.ok) describeScheduleError(baseline.error);
+    const loaded = new Set<number>();
+    const holidays: Holiday[] = [];
+    const sources: { title: string; url: string }[] = [];
+    let result = baseline.result;
+    for (;;) {
+      const firstYear = Number(result.projectStartDate.slice(0, 4));
+      const lastYear = Number(result.calculatedEndDate.slice(0, 4));
+      if (lastYear - firstYear > 50) throw errors.rule("SCHEDULE_TOO_LONG", "The schedule spans more than 50 years.");
+      const missing = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => firstYear + index).filter((year) => !loaded.has(year));
+      if (missing.length === 0) break;
+      const years = await Promise.all(missing.map(indonesiaHolidays));
+      for (const [index, year] of missing.entries()) {
+        loaded.add(year);
+        holidays.push(...years[index]!.holidays);
+        sources.push(...years[index]!.sources);
+      }
+      const calculated = computeSchedule(rows, links, { ...options, calendar: calendarWithHolidays(holidays.map((holiday) => holiday.date)) });
+      if (!calculated.ok) describeScheduleError(calculated.error);
+      result = calculated.result;
+    }
+    return { baseline: baseline.result, withHolidays: result, holidays, sources, delayCalendarDays: toDayNumber(result.calculatedEndDate) - toDayNumber(baseline.result.calculatedEndDate) };
+  },
   /**
    * Runs the critical path calculation and writes the results back onto the
    * tasks. Every call is a full recompute: incremental updates over a dependency

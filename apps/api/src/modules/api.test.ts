@@ -273,6 +273,26 @@ describe("API", () => {
       expect(schedule.body?.projectStartDate).toBe("2026-11-02");
     });
 
+    it("compares holidays without changing the saved schedule", async () => {
+      const { projectId } = await makeProject(true);
+      const before = await request(harness.api, harness.token, "GET", `/projects/${projectId}/schedule/timeline`);
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = Object.assign(async () => Response.json({ meta: { year: 2026, sources: [{ title: "Decree", url: "https://example.com/decree" }] }, data: [{ date: "2026-11-03", name: "Holiday", type: "national_holiday" }] }), { preconnect: originalFetch.preconnect });
+      try {
+        const comparison = await request(harness.api, harness.token, "GET", `/projects/${projectId}/schedule/holiday-comparison`);
+        expect(comparison.status).toBe(200);
+        expect(comparison.body?.delayCalendarDays).toBe(1);
+        expect((comparison.body?.baseline as { calculatedEndDate: string }).calculatedEndDate).toBe("2026-11-04");
+        expect((comparison.body?.withHolidays as { calculatedEndDate: string }).calculatedEndDate).toBe("2026-11-05");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+      const after = await request(harness.api, harness.token, "GET", `/projects/${projectId}/schedule/timeline`);
+      expect(after.body).toEqual(before.body);
+      const denied = await request(outsider.api, outsider.token, "GET", `/projects/${projectId}/schedule/holiday-comparison`);
+      expect(denied.status).toBe(403);
+    });
+
     it("refuses a dependency that would create a loop", async () => {
       const { projectId } = await makeProject();
 

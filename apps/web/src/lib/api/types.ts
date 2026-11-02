@@ -362,6 +362,21 @@ export interface Timeline {
   range: { from: string; to: string } | null;
 }
 
+export interface HolidayComparison {
+  baseline: ComparisonSchedule;
+  withHolidays: ComparisonSchedule;
+  holidays: { date: string; name: string; type: "national_holiday" | "joint_leave" }[];
+  sources: { title: string; url: string }[];
+  delayCalendarDays: number;
+}
+
+export interface ComparisonSchedule {
+  projectStartDate: string;
+  calculatedEndDate: string;
+  projectDurationDays: number;
+  tasks: { id: string; startDate: string; endDate: string; totalFloatDays: number; isCritical: boolean }[];
+}
+
 export interface ScheduleRevisionItem {
   revisionId: string;
   taskId: string;

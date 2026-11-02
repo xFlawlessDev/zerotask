@@ -9,6 +9,8 @@ import { PriorityLabel, StatusLabel, Tag } from "@/components/ui/status";
 import { DateField, SelectField, TextArea, TextField } from "@/components/ui/field";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScheduleTab } from "@/features/project/schedule-tab";
+import { TaskEditor } from "@/features/project/task-editor";
+import { projectRoleAtLeast } from "@zerotask/domain";
 import { formatShortDate, formatDate, formatVariance } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { TaskStatus } from "@zerotask/domain";
@@ -22,11 +24,11 @@ import type { TaskStatus } from "@zerotask/domain";
  */
 export default function ProjectDetailPage() {
   const { projectId } = useParams({ from: "/app/projects/$projectId" });
-  const { capabilities } = useRequiredSession();
+  const { capabilities, person } = useRequiredSession();
   const navigate = useNavigate();
 
   const { data: project, isLoading, error, refetch } = useProject(projectId);
-  const { data: timeline } = useTimeline(projectId);
+  const { data: timeline, error: timelineError, refetch: refetchTimeline } = useTimeline(projectId);
   const { data: submissions } = useSubmissions(projectId);
 
   const remove = useDeleteProject();
@@ -135,11 +137,11 @@ export default function ProjectDetailPage() {
           </TabsList>
 
           <TabsContent value="tasks">
-            <TasksPanel projectId={project.id} />
+            <TasksPanel project={project} canEdit={capabilities.role === "admin" || projectRoleAtLeast(project.members.find((member) => member.userId === person.id)?.role, "member")} canManagePlan={capabilities.role === "admin" || projectRoleAtLeast(project.members.find((member) => member.userId === person.id)?.role, "manager")} />
           </TabsContent>
 
           <TabsContent value="schedule">
-            <ScheduleTab projectId={project.id} timeline={timeline} />
+            <ScheduleTab projectId={project.id} timeline={timeline} error={!!timelineError} onRetry={() => void refetchTimeline()} canRecalculate={capabilities.role === "admin" || projectRoleAtLeast(project.members.find((member) => member.userId === person.id)?.role, "member")} />
           </TabsContent>
 
           <TabsContent value="submissions">
@@ -181,8 +183,9 @@ function ProjectStatusLabelInline({ status }: { status: string }) {
 
 const STATUS_ORDER: TaskStatus[] = ["in_progress", "pending_review", "blocked", "not_started", "completed", "cancelled"];
 
-function TasksPanel({ projectId }: { projectId: string }) {
-  const { data, isLoading, error, refetch } = useProjectTasks(projectId);
+function TasksPanel({ project, canEdit, canManagePlan }: { project: import("@/lib/api/types").ProjectDetail; canEdit: boolean; canManagePlan: boolean }) {
+  const { data, isLoading, error, refetch } = useProjectTasks(project.id);
+  const [editing, setEditing] = useState<import("@/lib/api/types").Task | null | undefined>(undefined);
 
   if (error) {
     return <ErrorState description="The task list could not be loaded." action={<Button onClick={() => void refetch()}>Try again</Button>} />;
@@ -192,19 +195,17 @@ function TasksPanel({ projectId }: { projectId: string }) {
 
   const tasks = data?.items ?? [];
 
-  if (tasks.length === 0) {
-    return (
+  return (
+    <>
+      {canEdit && <div className="mb-3 flex justify-end"><Button variant="primary" onClick={() => setEditing(null)}>New task</Button></div>}
+      {tasks.length === 0 ? (
       <div className="rounded-panel border border-rule bg-surface">
         <EmptyState
           title="No tasks yet"
-          description="Tasks carry the duration, the assignee, and the links that make the schedule real. Add the first one to start the plan."
+          description={canEdit ? "Add a task to start planning this project." : "There are no tasks in this project yet."}
         />
       </div>
-    );
-  }
-
-  return (
-    <div className="overflow-hidden rounded-panel border border-rule bg-surface">
+      ) : <div className="overflow-x-auto rounded-panel border border-rule bg-surface">
       <table className="w-full text-left">
         <caption className="sr-only">Tasks in this project, ordered by code</caption>
         <thead>
@@ -216,6 +217,7 @@ function TasksPanel({ projectId }: { projectId: string }) {
             <th scope="col" className="hidden px-3 py-2 sm:table-cell">Priority</th>
             <th scope="col" className="hidden px-3 py-2 lg:table-cell">Dates</th>
             <th scope="col" className="hidden px-3 py-2 text-right xl:table-cell">Float</th>
+            {canEdit && <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-rule">
@@ -244,18 +246,21 @@ function TasksPanel({ projectId }: { projectId: string }) {
               <td className="tnum hidden px-3 text-meta text-ink-muted lg:table-cell">
                 {formatShortDate(task.earlyStart ?? task.plannedStartDate)} → {formatShortDate(task.earlyFinish ?? task.plannedEndDate)}
               </td>
-              <td className="tnum hidden px-3 text-right text-meta lg:table-cell">
+              <td className="tnum hidden px-3 text-right text-meta xl:table-cell">
                 {task.isCritical ? (
                   <span className="font-medium text-danger">critical</span>
                 ) : (
                   <span className="text-ink-muted">{task.totalFloatDays ?? "–"}d</span>
                 )}
               </td>
+              {canEdit && <td className="px-3 text-right"><Button size="sm" onClick={() => setEditing(task)} aria-label={`Manage ${task.code}: ${task.name}`}>Manage</Button></td>}
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
+    </div>}
+    {editing !== undefined && <TaskEditor project={project} task={editing} canManagePlan={canManagePlan} onClose={() => setEditing(undefined)} />}
+    </>
   );
 }
 

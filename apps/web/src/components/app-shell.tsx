@@ -3,6 +3,7 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { useRequiredSession } from "@/features/session";
 import { useFavorites, useOverview } from "@/features/hooks";
 import { TopBar } from "@/components/top-bar";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { IconRail, IconStar } from "@/components/icon";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/logo.png";
@@ -62,6 +63,7 @@ export function AppShell({ title, children }: { title: string; children: React.R
   const location = useLocation();
 
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const items = NAV.filter((item) => !item.adminOnly || capabilities.managePeople);
 
@@ -181,11 +183,40 @@ export function AppShell({ title, children }: { title: string; children: React.R
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar title={title} />
+        <TopBar title={title} onOpenNavigation={() => setMobileOpen(true)} />
         <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto">
           {children}
         </main>
       </div>
+      <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
+        <DialogContent className="top-0 left-0 flex h-dvh max-h-none w-72 max-w-[85vw] translate-x-0 translate-y-0 flex-col gap-0 rounded-none p-0">
+          <DialogTitle className="border-b border-rule px-4 py-4">Zero Task</DialogTitle>
+          <nav aria-label="Main" className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
+            {items.map((item) => {
+              const Icon = item.icon;
+              const active = isActive(location.pathname, item.to);
+              const count = overview && item.count ? item.count(overview) : 0;
+              return (
+                <Link key={item.to} to={item.to} onClick={() => setMobileOpen(false)} aria-current={active ? "page" : undefined}
+                  className={cn("flex min-h-11 items-center gap-3 rounded-control px-3 text-body font-medium", active ? "bg-accent-wash text-accent-ink" : "text-ink-muted hover:bg-sunk hover:text-ink")}>
+                  <Icon /> <span className="flex-1">{item.label}</span>
+                  {count > 0 && <span className="tnum text-meta text-danger">{count}</span>}
+                </Link>
+              );
+            })}
+          </nav>
+          {(favorites?.length ?? 0) > 0 && (
+            <div className="border-t border-rule p-3">
+              <p className="px-3 pb-2 text-label font-medium text-faint">Pinned</p>
+              {favorites!.slice(0, 6).map((favorite) => (
+                <Link key={favorite.href} to={favorite.href} onClick={() => setMobileOpen(false)} className="flex min-h-10 items-center gap-3 rounded-control px-3 text-compact text-ink-muted hover:bg-sunk hover:text-ink">
+                  <IconStar size={12} /><span className="truncate">{favorite.label}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

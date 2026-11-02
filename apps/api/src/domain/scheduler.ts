@@ -8,9 +8,7 @@ import type { DependencyType } from "@zerotask/domain";
  * arithmetic free of timezone drift, and working days rather than calendar days
  * is what makes a Friday start plus a three-day task end on Tuesday.
  *
- * A day is a working day when it is Monday to Friday. Holidays are not modelled;
- * a team that needs them replaces `weekdayCalendar`, and every function below is
- * already expressed in terms of it.
+ * The default calendar excludes weekends. Other calendars can also exclude holidays.
  */
 
 export interface Calendar {
@@ -23,6 +21,11 @@ export const weekdayCalendar: Calendar = {
     return weekday !== 0 && weekday !== 6;
   },
 };
+
+export function calendarWithHolidays(dates: Iterable<string>): Calendar {
+  const holidays = new Set(Array.from(dates, toDayNumber));
+  return { isWorkingDay: (day) => weekdayCalendar.isWorkingDay(day) && !holidays.has(day) };
+}
 
 const MS_PER_DAY = 86_400_000;
 

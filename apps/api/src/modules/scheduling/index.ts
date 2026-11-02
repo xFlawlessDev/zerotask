@@ -24,6 +24,11 @@ export function schedulingModule(deps: Deps, guards: Guards) {
     )
     /** Everything the Gantt draws, in one payload: bars, links, and the axis range. */
     .get(
+      "/projects/:projectId/schedule/holiday-comparison",
+      ({ projectId }) => SchedulingService.holidayComparison(deps.db, projectId),
+      { projectAccess: "projectId", params: projectParams },
+    )
+    .get(
       "/projects/:projectId/schedule/timeline",
       ({ projectId }) => SchedulingService.timeline(deps.db, projectId),
       { projectAccess: "projectId", params: projectParams },

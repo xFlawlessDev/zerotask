@@ -14,17 +14,21 @@ import { initials } from "@/lib/format";
  * everywhere. Everything in it exists; there is no search box that does not search
  * and no avatar menu with one item.
  */
-export function TopBar({ title }: { title: string }) {
+export function TopBar({ title, onOpenNavigation }: { title: string; onOpenNavigation: () => void }) {
   const { person } = useRequiredSession();
   const { resolvedTheme, setTheme } = useAppearance();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const handleSignOut = async () => {
-    await signOut();
-    queryClient.clear();
-    toast.success("Signed out");
-    void navigate({ to: "/auth" });
+    try {
+      await signOut();
+      queryClient.clear();
+      toast.success("Signed out");
+      void navigate({ to: "/auth" });
+    } catch {
+      toast.error("Could not sign out. Please try again.");
+    }
   };
 
   return (
@@ -32,6 +36,9 @@ export function TopBar({ title }: { title: string }) {
       className="sticky top-0 z-30 flex h-(--topbar-height) shrink-0 items-center gap-3 border-b border-rule bg-canvas px-4"
       data-testid="topbar"
     >
+      <div className="lg:hidden">
+        <IconButton label="Open navigation" onClick={onOpenNavigation}><IconRail /></IconButton>
+      </div>
       <div className="min-w-0 flex-1">
         <h2 className="truncate text-compact font-semibold text-ink-muted">{title}</h2>
       </div>

@@ -41,6 +41,24 @@ test.describe("authentication", () => {
 });
 
 test.describe("projects", () => {
+  test("an admin can create, edit and delete a project task", async ({ page }) => {
+    await signIn(page, people.admin);
+    await page.goto("/projects");
+    await page.getByRole("link", { name: /Atlas: warehouse rollout/ }).click();
+    await page.getByRole("button", { name: "New task" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Task name").fill("E2E task management");
+    await dialog.getByRole("button", { name: "Create task" }).click();
+    await expect(page.getByRole("cell", { name: "E2E task management", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /Manage .*E2E task management/ }).click();
+    await dialog.getByLabel("Task name").fill("E2E task updated");
+    await dialog.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByRole("cell", { name: "E2E task updated", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /Manage .*E2E task updated/ }).click();
+    page.once("dialog", (confirmation) => void confirmation.accept());
+    await dialog.getByRole("button", { name: "Delete task" }).click();
+    await expect(page.getByRole("cell", { name: "E2E task updated", exact: true })).toHaveCount(0);
+  });
   test("the project list shows every project the lead can open", async ({ asLead: page }) => {
     await page.goto("/projects");
     await expect(page.getByRole("heading", { name: "Projects", level: 1 })).toBeVisible();
@@ -92,12 +110,55 @@ test.describe("projects", () => {
 });
 
 test.describe("schedule", () => {
+  test("keeps task details accessible on a narrow screen", async ({ asLead: page }) => {
+    await page.goto("/projects");
+    await page.getByRole("link", { name: /Atlas: warehouse rollout/ }).click();
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.getByRole("tab", { name: "Schedule" }).click();
+    const chart = page.getByRole("region", { name: "Project timeline" });
+    await expect(chart.getByLabel("Timeline legend")).toBeVisible();
+    await chart.getByRole("button", { name: /Build the receiving adapter/ }).first().click();
+    await expect(page.getByRole("region", { name: "Selected task details" })).toContainText("Build the receiving adapter");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+  test("compares holidays and draws a gap in the task bar", async ({ asLead: page }) => {
+    await page.goto("/projects");
+    const timelineResponse = page.waitForResponse((response) => response.url().includes("/schedule/timeline"));
+    await page.getByRole("link", { name: /Atlas: warehouse rollout/ }).click();
+    const timeline = await (await timelineResponse).json();
+    const task = timeline.bars[0];
+    const baseTask = { id: task.id, startDate: "2026-11-02", endDate: "2026-11-04", totalFloatDays: 0, isCritical: true };
+    const result = { projectStartDate: "2026-11-02", calculatedEndDate: "2026-11-04", projectDurationDays: 3, tasks: [baseTask] };
+    await page.route("**/schedule/holiday-comparison", (route) => route.fulfill({ json: { baseline: result, withHolidays: { ...result, calculatedEndDate: "2026-11-05", tasks: [{ ...baseTask, endDate: "2026-11-05" }] }, holidays: [{ date: "2026-11-03", name: "Test holiday", type: "national_holiday" }], sources: [{ title: "Decree", url: "https://example.com" }], delayCalendarDays: 1 } }));
+    await page.getByRole("tab", { name: "Schedule" }).click();
+    await page.getByRole("switch", { name: "Include holidays" }).click();
+    await expect(page.getByText("1 calendar day", { exact: true })).toBeVisible();
+    const bar = page.getByRole("img", { name: new RegExp(task.code) });
+    await expect(bar.locator("[data-schedule-segment]")).toHaveCount(2);
+    await page.getByText("Holidays within this schedule").click();
+    await expect(page.getByText(/Test holiday/)).toBeVisible();
+    await page.getByRole("switch", { name: "Holidays included" }).click();
+    await expect(bar.locator("[data-schedule-segment]")).toHaveCount(1);
+  });
   test("the schedule tab draws the Gantt with a computed finish date", async ({ asLead: page }) => {
     await page.goto("/projects");
     await page.getByRole("link", { name: /Atlas: warehouse rollout/ }).click();
     await page.getByRole("tab", { name: "Schedule" }).click();
-    await expect(page.getByText("Computed finish")).toBeVisible();
+    await expect(page.getByText("Latest finish shown")).toBeVisible();
     await expect(page.getByRole("img", { name: /ZR-001-03/ })).toBeVisible();
+    await page.getByLabel("Search tasks").fill("receiving adapter");
+    await expect(page.getByText(/1 of \d+ tasks/)).toBeVisible();
+    await page.getByRole("button", { name: /Show details for .*Build the receiving adapter/ }).click();
+    await expect(page.getByRole("region", { name: "Selected task details" })).toContainText("Build the receiving adapter");
+    await page.getByLabel("Search tasks").fill("no matching task");
+    await expect(page.getByText("No tasks match these filters.")).toBeVisible();
+    await page.getByLabel("Search tasks").clear();
+    await page.getByRole("button", { name: "Critical only" }).click();
+    await expect(page.getByRole("button", { name: "Critical only" })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("radio", { name: "Day" }).click();
+    await expect(page.getByRole("radio", { name: "Day" })).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByLabel("Timeline months")).toBeVisible();
+    await expect(page.getByLabel("Timeline months")).toContainText(/\w+ \d{4}/);
   });
 
   test("recalculate runs the scheduler and reports success", async ({ asLead: page }) => {
