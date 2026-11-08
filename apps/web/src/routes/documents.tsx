@@ -2,11 +2,12 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useDocuments, useDocumentActions } from "@/features/hooks";
 import { useRequiredSession } from "@/features/session";
+import { UploadDialog } from "@/features/documents/upload-dialog";
 import { Button } from "@/components/ui/button";
-import { SelectField, TextField } from "@/components/ui/field";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { EmptyState, LoadingState, PageHeader } from "@/components/ui/surface";
-import { IconDownload, IconPlus, IconSearch, IconTrash, IconUpload } from "@/components/icon";
+import { SelectField } from "@/components/ui/field";
+import { EmptyState, ErrorState, LoadingState, PageHeader } from "@/components/ui/surface";
+import { ConfirmDialog } from "@/components/ui/confirm";
+import { IconDownload, IconPlus, IconSearch, IconTrash } from "@/components/icon";
 import { formatDateTime } from "@/lib/format";
 import { DOCUMENT_KINDS } from "@zerotask/domain";
 import type { DocumentKind } from "@zerotask/domain";
@@ -17,6 +18,11 @@ import type { DocumentKind } from "@zerotask/domain";
  * One table, one upload dialog, one search. The kind filter is a select rather than
  * a row of buttons because there are six kinds and six buttons is a toolbar where a
  * filter belongs.
+ *
+ * A document belongs to a project (and optionally one of its tasks) or to the
+ * workspace, and the upload dialog asks which. The previous version accepted only
+ * a name, so every document it created was an orphan: the table could show a
+ * "Belongs to" column that was always empty.
  */
 
 const KIND_LABEL: Record<DocumentKind, string> = {
@@ -29,18 +35,23 @@ const KIND_LABEL: Record<DocumentKind, string> = {
 };
 
 export default function DocumentsPage() {
-  const { capabilities } = useRequiredSession();
+  const { capabilities, person } = useRequiredSession();
 
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState<"all" | DocumentKind>("all");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [deleting, setDeleting] = useState<{ id: string; label: string } | null>(null);
 
-  const { data, isLoading } = useDocuments(undefined, search);
+  const { data, isLoading, error, refetch } = useDocuments(undefined, search);
   const { remove } = useDocumentActions();
 
   const rows = (data?.items ?? []).filter(
     (row) => kind === "all" || row.kind === kind,
   );
+
+  /** The server lets the uploader and an admin delete; nobody else may try. */
+  const canDelete = (uploadedById: string) =>
+    capabilities.managePeople || uploadedById === person.id;
 
   return (
     <>
@@ -86,7 +97,12 @@ export default function DocumentsPage() {
           )}
         </div>
 
-        {isLoading ? (
+        {error ? (
+          <ErrorState
+            description="The document list could not be loaded. Check your connection and try again."
+            action={<Button onClick={() => void refetch()}>Try again</Button>}
+          />
+        ) : isLoading ? (
           <LoadingState label="Loading documents" />
         ) : rows.length === 0 ? (
           <div className="rounded-panel border border-rule bg-surface">
@@ -108,8 +124,16 @@ export default function DocumentsPage() {
           </div>
         ) : (
           <div className="overflow-hidden rounded-panel border border-rule bg-surface">
-            <table className="w-full text-left">
+            <table className="w-full table-fixed text-left">
               <caption className="sr-only">Documents across all projects</caption>
+              <colgroup>
+                <col className="w-24" />
+                <col />
+                <col className="hidden md:table-column md:w-32" />
+                <col className="hidden lg:table-column lg:w-56" />
+                <col className="hidden lg:table-column lg:w-36" />
+                <col className="w-16" />
+              </colgroup>
               <thead>
                 <tr className="border-b border-rule bg-sunk text-label font-medium text-ink-muted">
                   <th scope="col" className="px-3 py-2">Code</th>
@@ -124,22 +148,24 @@ export default function DocumentsPage() {
                 {rows.map((row) => (
                   <tr key={row.id} className="h-(--row-height) transition-colors hover:bg-sunk">
                     <td className="tnum px-3 font-mono text-meta text-ink-muted">{row.code}</td>
-                    <td className="max-w-0 px-3">
+                    <td className="min-w-0 px-3">
                       <span className="block truncate text-compact text-ink" title={row.note ?? row.name}>
                         {row.name}
                       </span>
-                      <span className="block text-label text-faint">
+                      <span className="block truncate text-label text-faint">
                         {row.uploadedByName}
                         {row.version !== "1.0" && ` · v${row.version}`}
+                        {row.taskCode && ` · ${row.taskCode}`}
                       </span>
                     </td>
                     <td className="hidden px-3 text-meta text-ink-muted md:table-cell">{KIND_LABEL[row.kind] ?? row.kind}</td>
-                    <td className="hidden px-3 lg:table-cell">
+                    <td className="hidden min-w-0 px-3 lg:table-cell">
                       {row.projectId ? (
                         <Link
                           to="/projects/$projectId"
                           params={{ projectId: row.projectId }}
-                          className="tnum font-mono text-meta text-accent-ink hover:underline"
+                          className="block truncate text-meta text-accent-ink hover:underline"
+                          title={row.projectName ?? undefined}
                         >
                           {row.projectName}
                         </Link>
@@ -164,18 +190,16 @@ export default function DocumentsPage() {
                             <IconDownload size={14} />
                           </a>
                         )}
-                        <Button
-                          variant="quiet"
-                          aria-label={`Delete ${row.name}`}
-                          onClick={() => {
-                            if (window.confirm(`Delete ${row.code} ${row.name}? This cannot be undone.`)) {
-                              remove.mutate(row.id);
-                            }
-                          }}
-                          className="size-7 p-0 text-danger"
-                        >
-                          <IconTrash size={14} />
-                        </Button>
+                        {canDelete(row.uploadedById) && (
+                          <Button
+                            variant="quiet"
+                            aria-label={`Delete ${row.name}`}
+                            onClick={() => setDeleting({ id: row.id, label: `${row.code} ${row.name}` })}
+                            className="size-7 p-0 text-danger"
+                          >
+                            <IconTrash size={14} />
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -187,121 +211,22 @@ export default function DocumentsPage() {
       </div>
 
       <UploadDialog open={uploadOpen} onOpenChange={setUploadOpen} />
+
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title="Delete this document?"
+        description={
+          deleting
+            ? `${deleting.label} will be removed from the repository and every list that shows it. The file itself is deleted. This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete document"
+        onConfirm={() => {
+          if (deleting) remove.mutate(deleting.id);
+          setDeleting(null);
+        }}
+      />
     </>
   );
-}
-
-function UploadDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { upload } = useDocumentActions();
-
-  const [file, setFile] = useState<File | null>(null);
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState<DocumentKind>("other");
-  const [note, setNote] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const close = () => {
-    onOpenChange(false);
-    setFile(null);
-    setName("");
-    setKind("other");
-    setNote("");
-    setError(null);
-  };
-
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!file && name.trim().length === 0) {
-      setError("Attach a file, or give the document a name to register it as a reference.");
-      return;
-    }
-
-    try {
-      await upload.mutateAsync({
-        file: file ?? undefined,
-        name: name.trim() || file?.name,
-        kind,
-        note: note.trim() || undefined,
-      });
-      close();
-    } catch {
-      // surfaced by the mutation's toast
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add a document</DialogTitle>
-          <DialogDescription>
-            Upload a file, or register a reference by name only. A code is generated for you.
-          </DialogDescription>
-        </DialogHeader>
-
-        <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-3" noValidate>
-          <label className="flex flex-col gap-1">
-            <span className="text-meta font-medium text-ink">File</span>
-            <label
-              className={cnDropzone(!!file)}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault();
-                const dropped = event.dataTransfer.files[0];
-                if (dropped) setFile(dropped);
-              }}
-            >
-              <input
-                type="file"
-                className="sr-only"
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                aria-label="Choose a file to upload"
-              />
-              <IconUpload className="text-faint" />
-              <span className="text-compact text-ink">
-                {file ? file.name : "Drop a file here, or choose one"}
-              </span>
-              <span className="text-meta text-ink-muted">Up to 25 MB. PDF, image, or office document.</span>
-            </label>
-          </label>
-
-          <TextField
-            label="Name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            hint={file ? "Defaults to the file name if left empty." : "Required when no file is attached."}
-            error={error}
-          />
-
-          <div className="grid grid-cols-2 gap-3">
-            <SelectField label="Kind" value={kind} onChange={(event) => setKind(event.target.value as DocumentKind)}>
-              {DOCUMENT_KINDS.map((value) => (
-                <option key={value} value={value}>
-                  {KIND_LABEL[value]}
-                </option>
-              ))}
-            </SelectField>
-          </div>
-
-          <TextField label="Note" value={note} onChange={(event) => setNote(event.target.value)} hint="Optional. What this document is for." />
-
-          <DialogFooter>
-            <Button type="button" variant="quiet" onClick={close}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={upload.isPending}>
-              {upload.isPending ? "Storing" : "Add document"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function cnDropzone(hasFile: boolean): string {
-  return [
-    "flex cursor-pointer flex-col items-center gap-1 rounded-control border border-dashed px-4 py-5 text-center transition-colors",
-    hasFile ? "border-settled bg-sunk" : "border-rule hover:border-ink-muted hover:bg-sunk",
-  ].join(" ");
 }

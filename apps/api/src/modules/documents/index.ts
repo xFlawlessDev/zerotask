@@ -72,7 +72,7 @@ export function documentsModule(deps: Deps, guards: Guards) {
             note: upload.note ?? null,
           },
           file,
-          (user as SessionUser).id,
+          { id: (user as SessionUser).id, role: (user as SessionUser).role },
         );
       },
       {

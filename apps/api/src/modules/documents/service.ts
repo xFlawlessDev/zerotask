@@ -2,7 +2,6 @@ import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Database } from "../../db/client.ts";
 import {
   documents,
-  projectMembers,
   projects,
   submissionDocuments,
   tasks,
@@ -10,6 +9,7 @@ import {
 } from "../../db/schema/index.ts";
 import { errors } from "../../lib/errors.ts";
 import { recordActivity } from "../../lib/events.ts";
+import { projectStanding } from "../../lib/membership.ts";
 import { Storage } from "./storage.ts";
 
 export const DocumentService = {
@@ -82,21 +82,35 @@ export const DocumentService = {
       note?: string | null;
     },
     file: File | null,
-    uploaderId: string,
+    uploader: { id: string; role: string },
   ) {
+    /**
+     * The same rule the guard applies: an admin may attach to any project because
+     * an admin may open any project. Re-deriving membership here by hand is what
+     * told an admin "You are not a member of this project" for a project the picker
+     * had just offered them.
+     */
     if (input.projectId) {
-      const [membership] = await db
-        .select({ userId: projectMembers.userId })
-        .from(projectMembers)
-        .where(
-          and(
-            eq(projectMembers.projectId, input.projectId),
-            eq(projectMembers.userId, uploaderId),
-          ),
-        );
-
-      if (!membership) throw errors.forbidden("You are not a member of this project");
+      const standing = await projectStanding(db, input.projectId, uploader);
+      if (!standing) throw errors.forbidden("You are not a member of this project");
     }
+
+    // A task only means something inside the project it belongs to. Without this
+    // check a document could name one project and point its task at another, which
+    // no screen can render correctly afterwards.
+    if (input.taskId) {
+      const [task] = await db
+        .select({ projectId: tasks.projectId })
+        .from(tasks)
+        .where(and(eq(tasks.id, input.taskId), isNull(tasks.deletedAt)));
+
+      if (!task) throw errors.notFound("Task");
+      if (input.projectId && task.projectId !== input.projectId) {
+        throw errors.invalid("That task belongs to a different project");
+      }
+    }
+
+    const uploaderId = uploader.id;
 
     const stored = file ? await Storage.put(file) : null;
 
@@ -223,4 +237,3 @@ export const DocumentService = {
       .where(inArray(documents.id, ids));
   },
 };
-

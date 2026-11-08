@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { config } from "../../config.ts";
 import { errors } from "../../lib/errors.ts";
+import { safeFileName } from "./naming.ts";
 
 /**
  * Files live on the local filesystem under a generated key. The key, not the
@@ -37,12 +38,6 @@ function assertAllowed(mimeType: string): void {
   }
 }
 
-/** Strips directory traversal and everything a filesystem might object to. */
-function safeName(name: string): string {
-  const cleaned = name.replaceAll(/[^\w.\-]+/gu, "_").replaceAll(/^\.+/u, "");
-  return cleaned.length > 0 ? cleaned.slice(-120) : "file";
-}
-
 export interface StoredFile {
   storageKey: string;
   sizeBytes: number;
@@ -61,7 +56,7 @@ export const Storage = {
     const mimeType = file.type || "application/octet-stream";
     assertAllowed(mimeType);
 
-    const key = `${randomUUID()}/${safeName(file.name)}`;
+    const key = `${randomUUID()}/${safeFileName(file.name)}`;
     const target = join(storageRoot(), key);
 
     await mkdir(dirname(target), { recursive: true });
