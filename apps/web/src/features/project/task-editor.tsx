@@ -3,6 +3,7 @@ import { useCreateTask, useDeleteTask, useDependencyActions, useMoveTask, useTim
 import { Button } from "@/components/ui/button";
 import { DateField, NumberField, SelectField, TextArea, TextField } from "@/components/ui/field";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm";
 import type { ProjectDetail, Task } from "@/lib/api/types";
 import type { DependencyType, TaskPriority } from "@zerotask/domain";
 
@@ -23,6 +24,7 @@ export function TaskEditor({ project, task, canManagePlan, onClose }: { project:
   const [lag, setLag] = useState("0");
   const [status, setStatus] = useState(task?.status);
   const [error, setError] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const create = useCreateTask(project.id);
   const update = useUpdateTask(project.id, task?.id ?? "");
   const remove = useDeleteTask(project.id);
@@ -48,7 +50,8 @@ export function TaskEditor({ project, task, canManagePlan, onClose }: { project:
   }
 
   async function deleteTask() {
-    if (!task || !window.confirm(`Delete ${task.code} ${task.name}?`)) return;
+    if (!task) return;
+    setConfirmingDelete(false);
     try { await remove.mutateAsync(task.id); onClose(); } catch { /* Reported by the mutation. */ }
   }
 
@@ -88,11 +91,25 @@ export function TaskEditor({ project, task, canManagePlan, onClose }: { project:
           {task && (status === "pending_review" || status === "completed") && <p className="text-meta text-ink-muted">Status: {status === "pending_review" ? "Awaiting review" : "Completed"}. Completion is handled through review.</p>}
           {error && <p role="alert" className="text-compact text-danger">{error}</p>}
           <DialogFooter>
-            {task && canManagePlan && <Button variant="danger" disabled={busy} onClick={() => void deleteTask()}>Delete task</Button>}
+            {task && canManagePlan && <Button variant="danger" disabled={busy} onClick={() => setConfirmingDelete(true)}>Delete task</Button>}
             <Button disabled={busy} onClick={onClose}>Cancel</Button>
             <Button type="submit" variant="primary" disabled={busy}>{busy ? "Saving…" : task ? "Save changes" : "Create task"}</Button>
           </DialogFooter>
         </form>
+
+        <ConfirmDialog
+          open={confirmingDelete}
+          onOpenChange={setConfirmingDelete}
+          title="Delete this task?"
+          description={
+            task
+              ? `${task.code} ${task.name} leaves the plan, along with its dependencies and checklist. Work recorded against it stays in the history. This cannot be undone.`
+              : ""
+          }
+          confirmLabel="Delete task"
+          pending={remove.isPending}
+          onConfirm={() => void deleteTask()}
+        />
       </DialogContent>
     </Dialog>
   );

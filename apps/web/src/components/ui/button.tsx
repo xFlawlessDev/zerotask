@@ -20,6 +20,8 @@ const buttonVariants = cva(
           "border-transparent bg-transparent text-ink-muted hover:bg-sunk hover:text-ink",
         danger:
           "border-danger bg-transparent text-danger hover:bg-danger hover:text-surface",
+        /** The confirming button in a destructive dialog: it must read as final. */
+        "danger-filled": "border-danger bg-danger text-surface hover:brightness-110 active:brightness-95",
         link: "border-transparent bg-transparent text-accent-ink underline-offset-4 hover:underline",
       },
       size: {

@@ -4,10 +4,11 @@ import { usePeople, useDepartments, usePersonActions, useDepartmentActions, useT
 import { Button, IconButton } from "@/components/ui/button";
 import { PasswordField, SelectField, TextField } from "@/components/ui/field";
 import { EmptyState, ErrorState, Figure, LoadingState, PageHeader } from "@/components/ui/surface";
+import { ConfirmDialog } from "@/components/ui/confirm";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { IconPlus, IconTrash } from "@/components/icon";
 import { initials } from "@/lib/format";
-import { ROLES, ROLE_LABEL } from "@zerotask/domain";
+import { countLabel, ROLES, ROLE_LABEL } from "@zerotask/domain";
 import type { Role } from "@zerotask/domain";
 
 /**
@@ -26,11 +27,13 @@ export default function AdminPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [removingPerson, setRemovingPerson] = useState<{ id: string; label: string } | null>(null);
+  const [removingDepartment, setRemovingDepartment] = useState<{ id: string; label: string } | null>(null);
   const { create: createDepartment, remove: removeDepartment } = useDepartmentActions();
 
   const { data: peopleData, isLoading, error, refetch } = usePeople({ search, page });
-  const { data: departments } = useDepartments();
-  const { data: templates } = useTemplates();
+  const { data: departments, error: departmentsError, refetch: refetchDepartments } = useDepartments();
+  const { data: templates, error: templatesError } = useTemplates();
 
   if (!capabilities.managePeople) {
     return (
@@ -55,9 +58,10 @@ export default function AdminPage() {
         description={`Signed in as ${person.name ?? person.email}, with the admin role.`}
         meta={
           <>
-            <Figure value={peopleData?.total ?? 0} label="people" />
-            <Figure value={departments?.length ?? 0} label="departments" />
-            <Figure value={templates?.length ?? 0} label="templates" />
+            {/* A failed request is not a count of zero: show a dash, not a lie. */}
+            <Figure value={peopleData?.total ?? (error ? "–" : 0)} label="person" plural="people" />
+            <Figure value={departments?.length ?? (departmentsError ? "–" : 0)} label="department" plural="departments" />
+            <Figure value={templates?.length ?? (templatesError ? "–" : 0)} label="template" plural="templates" />
           </>
         }
       />
@@ -111,15 +115,7 @@ export default function AdminPage() {
                       label={`Remove ${row.name ?? row.email}`}
                       variant="danger"
                       disabled={row.id === person.id || removePerson.isPending}
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            `Remove ${row.name ?? row.email} from the workspace? They lose access immediately; their completed work keeps their name on it.`,
-                          )
-                        ) {
-                          removePerson.mutate(row.id);
-                        }
-                      }}
+                      onClick={() => setRemovingPerson({ id: row.id, label: row.name ?? row.email })}
                     >
                       <IconTrash size={14} />
                     </IconButton>
@@ -133,15 +129,20 @@ export default function AdminPage() {
 
         <section aria-label="Departments">
           <h2 className="mb-3 text-section font-semibold text-ink">Departments</h2>
-          <DepartmentsPanel
-            departments={departments ?? []}
-            onCreate={createDepartment.mutateAsync}
-            onRemove={(id, name) => {
-              if (window.confirm(`Remove the ${name} department? People in it keep their accounts but lose the department.`)) {
-                removeDepartment.mutate(id);
-              }
-            }}
-          />
+          {departmentsError ? (
+            <ErrorState
+              description="The departments could not be loaded."
+              action={<Button onClick={() => void refetchDepartments()}>Try again</Button>}
+            />
+          ) : departments === undefined ? (
+            <LoadingState label="Loading departments" />
+          ) : (
+            <DepartmentsPanel
+              departments={departments}
+              onCreate={createDepartment.mutateAsync}
+              onRemove={(id, name) => setRemovingDepartment({ id, label: name })}
+            />
+          )}
         </section>
       </div>
       <Dialog open={createOpen} onOpenChange={(open) => { if (!createPerson.isPending) setCreateOpen(open); }}><DialogContent><DialogHeader><DialogTitle>Add user</DialogTitle><DialogDescription>Create a staff account. You can change its role and department after creation.</DialogDescription></DialogHeader>
@@ -151,6 +152,40 @@ export default function AdminPage() {
           <PasswordField label="Initial password" required minLength={10} maxLength={128} autoComplete="new-password" hint="At least 10 characters." value={password} onChange={(event) => setPassword(event.target.value)} />
           <DialogFooter><Button onClick={() => setCreateOpen(false)} disabled={createPerson.isPending}>Cancel</Button><Button type="submit" variant="primary" disabled={createPerson.isPending}>{createPerson.isPending ? "Creating…" : "Create user"}</Button></DialogFooter>
         </form></DialogContent></Dialog>
+
+      <ConfirmDialog
+        open={removingPerson !== null}
+        onOpenChange={(open) => !open && setRemovingPerson(null)}
+        title="Remove this person from the workspace?"
+        description={
+          removingPerson
+            ? `${removingPerson.label} loses access immediately, and is unassigned from open work. Their name stays on everything they already completed.`
+            : ""
+        }
+        confirmLabel="Remove from workspace"
+        pending={removePerson.isPending}
+        onConfirm={() => {
+          if (removingPerson) removePerson.mutate(removingPerson.id);
+          setRemovingPerson(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={removingDepartment !== null}
+        onOpenChange={(open) => !open && setRemovingDepartment(null)}
+        title="Remove this department?"
+        description={
+          removingDepartment
+            ? `${removingDepartment.label} stops appearing in pickers. People in it keep their accounts and lose the department. A department that still has people is refused, so move them first.`
+            : ""
+        }
+        confirmLabel="Remove department"
+        pending={removeDepartment.isPending}
+        onConfirm={() => {
+          if (removingDepartment) removeDepartment.mutate(removingDepartment.id);
+          setRemovingDepartment(null);
+        }}
+      />
     </>
   );
 }
@@ -183,7 +218,7 @@ function DepartmentsPanel({
               <span className="ml-2 font-mono text-meta text-ink-muted">{department.code}</span>
             </span>
             <span className="tnum hidden text-meta text-ink-muted sm:block">
-              {department.headcount ?? 0} people · {department.openTasks ?? 0} open tasks
+              {countLabel(department.headcount ?? 0, "person", "people")} · {countLabel(department.openTasks ?? 0, "open task")}
             </span>
             <IconButton
               label={`Remove ${department.name}`}

@@ -4,10 +4,11 @@ import { useRequiredSession } from "@/features/session";
 import { Button, IconButton } from "@/components/ui/button";
 import { SelectField, TextField } from "@/components/ui/field";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { EmptyState, LoadingState, PageHeader } from "@/components/ui/surface";
+import { EmptyState, ErrorState, LoadingState, PageHeader } from "@/components/ui/surface";
+import { ConfirmDialog } from "@/components/ui/confirm";
 import { IconPlus, IconSearch, IconTrash } from "@/components/icon";
 import { initials } from "@/lib/format";
-import { ROLES, ROLE_LABEL } from "@zerotask/domain";
+import { countLabel, ROLES, ROLE_LABEL } from "@zerotask/domain";
 import type { Role } from "@zerotask/domain";
 
 /**
@@ -24,9 +25,11 @@ export default function TeamPage() {
 
   const [search, setSearch] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
+  const [removingPerson, setRemovingPerson] = useState<{ id: string; label: string } | null>(null);
+  const [removingDepartment, setRemovingDepartment] = useState<{ id: string; label: string } | null>(null);
 
-  const { data, isLoading } = usePeople({ search });
-  const { data: departments } = useDepartments();
+  const { data, isLoading, error, refetch } = usePeople({ search });
+  const { data: departments, error: departmentsError, refetch: refetchDepartments } = useDepartments();
 
   const isAdmin = capabilities.managePeople;
 
@@ -75,7 +78,12 @@ export default function TeamPage() {
             </div>
           </div>
 
-          {isLoading ? (
+          {error ? (
+            <ErrorState
+              description="The people directory could not be loaded."
+              action={<Button onClick={() => void refetch()}>Try again</Button>}
+            />
+          ) : isLoading ? (
             <LoadingState label="Loading people" />
           ) : people.length === 0 ? (
             <div className="rounded-panel border border-rule bg-surface">
@@ -130,15 +138,7 @@ export default function TeamPage() {
                       <IconButton
                         label={`Remove ${person.name ?? person.email} from the workspace`}
                         variant="danger"
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              `Remove ${person.name ?? person.email}? They lose access, and their name stays on the work they did.`,
-                            )
-                          ) {
-                            remove.mutate(person.id);
-                          }
-                        }}
+                        onClick={() => setRemovingPerson({ id: person.id, label: person.name ?? person.email })}
                       >
                         <IconTrash size={14} />
                       </IconButton>
@@ -155,7 +155,12 @@ export default function TeamPage() {
             <h2 className="text-section font-semibold text-ink">Departments</h2>
           </div>
 
-          {departments === undefined ? (
+          {departmentsError ? (
+            <ErrorState
+              description="The departments could not be loaded."
+              action={<Button onClick={() => void refetchDepartments()}>Try again</Button>}
+            />
+          ) : departments === undefined ? (
             <LoadingState label="Loading departments" />
           ) : (
             <div className="overflow-hidden rounded-panel border border-rule bg-surface">
@@ -172,20 +177,16 @@ export default function TeamPage() {
                       <span className="ml-2 font-mono text-meta text-ink-muted">{department.code}</span>
                     </span>
                     <span className="tnum hidden text-meta text-ink-muted sm:block">
-                      {department.headcount ?? 0} people
+                      {countLabel(department.headcount ?? 0, "person", "people")}
                     </span>
                     <span className="tnum hidden text-meta text-ink-muted md:block">
-                      {department.openTasks ?? 0} open tasks
+                      {countLabel(department.openTasks ?? 0, "open task")}
                     </span>
                     {isAdmin && (
                       <IconButton
                         label={`Remove ${department.name}`}
                         variant="danger"
-                        onClick={() => {
-                          if (window.confirm(`Remove the ${department.name} department?`)) {
-                            removeDepartment.mutate(department.id);
-                          }
-                        }}
+                        onClick={() => setRemovingDepartment({ id: department.id, label: department.name })}
                       >
                         <IconTrash size={14} />
                       </IconButton>
@@ -199,6 +200,40 @@ export default function TeamPage() {
           )}
         </section>
       </div>
+
+      <ConfirmDialog
+        open={removingPerson !== null}
+        onOpenChange={(open) => !open && setRemovingPerson(null)}
+        title="Remove this person?"
+        description={
+          removingPerson
+            ? `${removingPerson.label} loses access immediately. Their name stays on the work they already did, so the history stays readable.`
+            : ""
+        }
+        confirmLabel="Remove from workspace"
+        pending={remove.isPending}
+        onConfirm={() => {
+          if (removingPerson) remove.mutate(removingPerson.id);
+          setRemovingPerson(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={removingDepartment !== null}
+        onOpenChange={(open) => !open && setRemovingDepartment(null)}
+        title="Remove this department?"
+        description={
+          removingDepartment
+            ? `${removingDepartment.label} stops appearing in pickers. Departments that still have people cannot be removed: move them first.`
+            : ""
+        }
+        confirmLabel="Remove department"
+        pending={removeDepartment.isPending}
+        onConfirm={() => {
+          if (removingDepartment) removeDepartment.mutate(removingDepartment.id);
+          setRemovingDepartment(null);
+        }}
+      />
     </>
   );
 }
