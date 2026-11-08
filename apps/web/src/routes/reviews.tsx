@@ -5,7 +5,7 @@ import { useParams } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { TextArea } from "@/components/ui/field";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { EmptyState, LoadingState, PageHeader } from "@/components/ui/surface";
+import { EmptyState, ErrorState, LoadingState, PageHeader } from "@/components/ui/surface";
 import { formatDateTime, formatHours } from "@/lib/format";
 import type { ReviewQueueItem } from "@/lib/api/types";
 
@@ -17,7 +17,7 @@ import type { ReviewQueueItem } from "@/lib/api/types";
  * nothing to act on.
  */
 export default function ReviewsPage() {
-  const { data, isLoading } = useReviewQueue();
+  const { data, isLoading, error, refetch } = useReviewQueue();
 
   const [deciding, setDeciding] = useState<{ item: ReviewQueueItem; decision: "approved" | "rejected" } | null>(null);
   const [note, setNote] = useState("");
@@ -53,7 +53,12 @@ export default function ReviewsPage() {
       />
 
       <div className="p-4 sm:p-6">
-        {isLoading ? (
+        {error ? (
+          <ErrorState
+            description="The review queue could not be loaded. An empty queue and a failed request are different things, so nothing is shown as 'nothing to review' until the request succeeds."
+            action={<Button onClick={() => void refetch()}>Try again</Button>}
+          />
+        ) : isLoading ? (
           <LoadingState label="Loading the review queue" />
         ) : (data?.length ?? 0) === 0 ? (
           <div className="rounded-panel border border-rule bg-surface">

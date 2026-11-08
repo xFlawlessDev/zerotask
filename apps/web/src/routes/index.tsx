@@ -7,6 +7,7 @@ import { Figure, LoadingState, EmptyState, ErrorState, PageHeader } from "@/comp
 import { StatusLabel } from "@/components/ui/status";
 import { IconArrowRight, IconOverdue } from "@/components/icon";
 import { formatDate, formatShortDate } from "@/lib/format";
+import { countLabel } from "@zerotask/domain";
 import type { TaskStatus } from "@zerotask/domain";
 
 /**
@@ -50,12 +51,16 @@ export default function OverviewPage() {
         meta={
           <>
             <span className="text-meta text-ink-muted">
-              {overview.projects.active} active projects
+              {countLabel(overview.projects.active, "active project")}
             </span>
             {overview.projects.atRisk > 0 && (
               <span className="inline-flex items-center gap-1 text-meta text-danger">
                 <IconOverdue />
-                {overview.projects.atRisk} past their target date
+                {/* Agreeing only the noun left "1 project past their target"; the
+                    possessive has to follow the number too. */}
+                {overview.projects.atRisk === 1
+                  ? "1 project past its target date"
+                  : `${overview.projects.atRisk} projects past their target date`}
               </span>
             )}
           </>
@@ -150,7 +155,8 @@ export default function OverviewPage() {
               <CardContent className="pt-3">
                 <Figure
                   value={overview.projects.atRisk}
-                  label="Projects past their target"
+                  label="project past its target"
+                  plural="projects past their target"
                   hint="Computed end date is later than the target launch date"
                   tone={overview.projects.atRisk > 0 ? "danger" : "settled"}
                   emphasis
@@ -161,7 +167,8 @@ export default function OverviewPage() {
               <CardContent className="pt-3">
                 <Figure
                   value={overview.tasks.blocked}
-                  label="Blocked tasks"
+                  label="blocked task"
+                  plural="blocked tasks"
                   hint="Someone is waiting on another piece of work"
                   tone={overview.tasks.blocked > 0 ? "caution" : "settled"}
                   emphasis
@@ -172,7 +179,8 @@ export default function OverviewPage() {
               <CardContent className="pt-3">
                 <Figure
                   value={overview.tasks.overdue}
-                  label="Overdue tasks"
+                  label="overdue task"
+                  plural="overdue tasks"
                   hint="Open tasks whose date has passed"
                   tone={overview.tasks.overdue > 0 ? "danger" : "settled"}
                   emphasis

@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import type { Timeline, TimelineBar } from "@/lib/api/types";
 import type { TaskStatus } from "@zerotask/domain";
-import { TASK_STATUSES } from "@zerotask/domain";
+import { countLabel, TASK_STATUSES } from "@zerotask/domain";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingState, Figure } from "@/components/ui/surface";
 import { TextField } from "@/components/ui/field";
@@ -172,7 +172,7 @@ export function ScheduleTab({
       </section>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap gap-6">
-          <Figure value={bars.filter((bar) => bar.start && bar.end).length} label="Tasks with dates" />
+          <Figure value={bars.filter((bar) => bar.start && bar.end).length} label="task with dates" plural="tasks with dates" />
           <Figure
             value={criticalCount}
             label="On the critical path"
@@ -226,7 +226,7 @@ export function ScheduleTab({
       <section aria-label="Project timeline" className="overflow-hidden rounded-panel border border-rule bg-surface">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-rule px-3 py-3 sm:px-4">
           <div><h3 className="text-section">Project timeline</h3><p className="mt-0.5 text-meta text-ink-muted">Select a task or bar to see details. Scroll horizontally to explore dates.</p></div>
-          <span className="text-meta text-ink-muted">{visibleBars.length} of {bars.length} tasks</span>
+          <span className="text-meta text-ink-muted">{visibleBars.length} of {countLabel(bars.length, "task")}</span>
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-2 border-b border-rule px-3 py-2 text-meta text-ink-muted sm:px-4" aria-label="Timeline legend">
           <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-4 rounded-mark bg-accent-ink/70" /> Task</span>
@@ -263,7 +263,7 @@ export function ScheduleTab({
                     className={cn("absolute top-0 flex h-full flex-col items-center justify-center border-l border-rule text-label whitespace-nowrap text-ink-muted", zoom !== "day" && "items-start px-1")}
                     style={{ left: mark.days * dayPx, ...(zoom === "day" ? { width: dayPx } : {}) }}
                   >
-                    {zoom === "day" && <span className="text-[9px] leading-none text-faint">{new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: "UTC" }).format(new Date(`${mark.iso}T00:00:00Z`))}</span>}{mark.label}
+                    {zoom === "day" && <span className="text-label leading-none text-faint">{new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: "UTC" }).format(new Date(`${mark.iso}T00:00:00Z`))}</span>}{mark.label}
                   </span>
                   ))}
                 </div>

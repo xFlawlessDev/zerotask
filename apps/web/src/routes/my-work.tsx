@@ -62,9 +62,9 @@ export default function MyWorkPage() {
         description={`Open tasks assigned to ${person.name ?? "you"}, ordered by deadline.`}
         meta={
           <>
-            <Figure value={counts.completed ?? 0} label="completed" tone="settled" />
-            <Figure value={counts.in_progress ?? 0} label="in progress" tone="accent" />
-            <Figure value={counts.blocked ?? 0} label="blocked" tone="danger" />
+            <Figure value={counts.completed ?? 0} label="completed task" plural="completed tasks" tone="settled" />
+            <Figure value={counts.in_progress ?? 0} label="task in progress" plural="tasks in progress" tone="accent" />
+            <Figure value={counts.blocked ?? 0} label="blocked task" plural="blocked tasks" tone="danger" />
           </>
         }
       />

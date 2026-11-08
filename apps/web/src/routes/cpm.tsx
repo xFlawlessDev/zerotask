@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { usePortfolio } from "@/features/hooks";
 import { Button } from "@/components/ui/button";
-import { EmptyState, Figure, LoadingState, PageHeader } from "@/components/ui/surface";
+import { EmptyState, ErrorState, Figure, LoadingState, PageHeader } from "@/components/ui/surface";
 import { IconOverdue } from "@/components/icon";
 import { formatDate } from "@/lib/format";
 
@@ -14,7 +14,7 @@ import { formatDate } from "@/lib/format";
  * the project page; this page answers "which project do I open first".
  */
 export default function CpmPage() {
-  const { data, isLoading } = usePortfolio();
+  const { data, isLoading, error, refetch } = usePortfolio();
 
   const rows = data ?? [];
   const late = rows.filter(
@@ -38,8 +38,8 @@ export default function CpmPage() {
         meta={
           rows.length > 0 ? (
             <>
-              <Figure value={totals.tasks} label="tasks scheduled" />
-              <Figure value={totals.critical} label="on critical paths" tone={totals.critical > 0 ? "danger" : "settled"} />
+              <Figure value={totals.tasks} label="task scheduled" plural="tasks scheduled" />
+              <Figure value={totals.critical} label="on a critical path" plural="on critical paths" tone={totals.critical > 0 ? "danger" : "settled"} />
               <Figure value={totals.blocked} label="blocked" tone={totals.blocked > 0 ? "caution" : "settled"} />
               <Figure value={totals.overdue} label="overdue" tone={totals.overdue > 0 ? "danger" : "settled"} />
             </>
@@ -48,7 +48,12 @@ export default function CpmPage() {
       />
 
       <div className="p-4 sm:p-6">
-        {isLoading ? (
+        {error ? (
+          <ErrorState
+            description="The portfolio could not be loaded. A schedule that has not run yet looks empty, so nothing is reported as 'nothing scheduled' until the request succeeds."
+            action={<Button onClick={() => void refetch()}>Try again</Button>}
+          />
+        ) : isLoading ? (
           <LoadingState label="Loading the portfolio" />
         ) : rows.length === 0 ? (
           <div className="rounded-panel border border-rule bg-surface">
@@ -63,17 +68,23 @@ export default function CpmPage() {
             />
           </div>
         ) : (
-          <div className="overflow-hidden rounded-panel border border-rule bg-surface">
-            <table className="w-full text-left">
+          /**
+           * The wrapper scrolls, not clips. `overflow-hidden` on a table wider than
+           * the viewport silently dropped the right-hand columns: at 390px the
+           * Target and Computed finish values existed but could not be read at all.
+           * Every column stays in the DOM and the container can be scrolled.
+           */
+          <div className="overflow-x-auto rounded-panel border border-rule bg-surface">
+            <table className="w-full min-w-[36rem] text-left">
               <caption className="sr-only">Schedule health per project</caption>
               <thead>
                 <tr className="border-b border-rule bg-sunk text-label font-medium text-ink-muted">
                   <th scope="col" className="px-3 py-2">Project</th>
                   <th scope="col" className="px-3 py-2 text-right">Tasks</th>
                   <th scope="col" className="px-3 py-2 text-right">Critical</th>
-                  <th scope="col" className="hidden px-3 py-2 text-right sm:table-cell">Blocked</th>
-                  <th scope="col" className="hidden px-3 py-2 text-right sm:table-cell">Overdue</th>
-                  <th scope="col" className="hidden px-3 py-2 text-right md:table-cell">Computed finish</th>
+                  <th scope="col" className="px-3 py-2 text-right">Blocked</th>
+                  <th scope="col" className="px-3 py-2 text-right">Overdue</th>
+                  <th scope="col" className="px-3 py-2 text-right">Computed finish</th>
                   <th scope="col" className="px-3 py-2 text-right">Target</th>
                 </tr>
               </thead>
@@ -104,20 +115,20 @@ export default function CpmPage() {
                           {row.criticalCount}
                         </span>
                       </td>
-                      <td className="tnum hidden px-3 text-right sm:table-cell">
+                      <td className="tnum px-3 text-right">
                         <span className={row.blockedCount > 0 ? "text-caution" : "text-ink-muted"}>
                           {row.blockedCount}
                         </span>
                       </td>
-                      <td className="tnum hidden px-3 text-right sm:table-cell">
+                      <td className="tnum px-3 text-right">
                         <span className={row.overdueCount > 0 ? "text-danger" : "text-ink-muted"}>
                           {row.overdueCount}
                         </span>
                       </td>
-                      <td className="tnum hidden px-3 text-right text-ink-muted md:table-cell">
+                      <td className="tnum px-3 text-right whitespace-nowrap text-ink-muted">
                         {row.baselinedEndDate ? formatDate(row.baselinedEndDate) : "Not run"}
                       </td>
-                      <td className="tnum px-3 text-right">
+                      <td className="tnum px-3 text-right whitespace-nowrap">
                         {row.targetLaunchDate ? (
                           <span className={isLate ? "inline-flex items-center gap-1 text-danger" : "text-ink-muted"}>
                             {isLate && <IconOverdue size={12} />}

@@ -3,7 +3,7 @@ import { useUpdateMe, useMyActivity, useNotificationPreferences, useNotification
 import { useAppearance } from "@/features/appearance";
 import { Button } from "@/components/ui/button";
 import { NumberField, Switch, TextField } from "@/components/ui/field";
-import { EmptyState, Figure, LoadingState, PageHeader } from "@/components/ui/surface";
+import { EmptyState, ErrorState, Figure, LoadingState, PageHeader } from "@/components/ui/surface";
 import { formatDateTime, initials } from "@/lib/format";
 
 /**
@@ -15,8 +15,13 @@ export default function ProfilePage() {
   const { person, departments } = useRequiredSession();
   const { refresh } = useSession();
   const updateMe = useUpdateMe();
-  const { data: activity } = useMyActivity(15);
-  const { data: preferences } = useNotificationPreferences();
+  const { data: activity, error: activityError, refetch: refetchActivity } = useMyActivity(15);
+  const {
+    data: preferences,
+    isLoading: loadingPreferences,
+    error: preferencesError,
+    refetch: refetchPreferences,
+  } = useNotificationPreferences();
   const { updatePreferences } = useNotificationActions();
   const { theme, setTheme, density, setDensity } = useAppearance();
 
@@ -116,14 +121,24 @@ export default function ProfilePage() {
             </div>
           </section>
 
-          {preferences && (
-            <section aria-label="Notifications" className="rounded-panel border border-rule bg-surface">
-              <div className="border-b border-rule px-3 py-2.5">
-                <h2 className="text-section font-semibold text-ink">Email notifications</h2>
-                <p className="text-meta text-ink-muted">
-                  In-app notifications always arrive; these control what also lands in your inbox.
-                </p>
-              </div>
+          {/* The section is always rendered. Hiding it on failure made a broken
+              request look like a feature this workspace does not have. */}
+          <section aria-label="Notifications" className="rounded-panel border border-rule bg-surface">
+            <div className="border-b border-rule px-3 py-2.5">
+              <h2 className="text-section font-semibold text-ink">Email notifications</h2>
+              <p className="text-meta text-ink-muted">
+                In-app notifications always arrive; these control what also lands in your inbox.
+              </p>
+            </div>
+
+            {preferencesError ? (
+              <ErrorState
+                description="Your notification settings could not be loaded, so the switches below are not shown rather than shown in the wrong state."
+                action={<Button onClick={() => void refetchPreferences()}>Try again</Button>}
+              />
+            ) : loadingPreferences || !preferences ? (
+              <LoadingState label="Loading notification settings" />
+            ) : (
               <div className="px-3 py-1">
                 <Switch
                   label="Email me"
@@ -154,15 +169,20 @@ export default function ProfilePage() {
                   </>
                 )}
               </div>
-            </section>
-          )}
+            )}
+          </section>
 
           <section aria-label="Your recent activity" className="rounded-panel border border-rule bg-surface">
             <div className="border-b border-rule px-3 py-2.5">
               <h2 className="text-section font-semibold text-ink">Recent activity</h2>
               <p className="text-meta text-ink-muted">Your last recorded changes, newest first.</p>
             </div>
-            {activity === undefined ? (
+            {activityError ? (
+              <ErrorState
+                description="Your activity could not be loaded. An empty history and a failed request are different things, so nothing is reported as 'no activity' until the request succeeds."
+                action={<Button onClick={() => void refetchActivity()}>Try again</Button>}
+              />
+            ) : activity === undefined ? (
               <LoadingState label="Loading activity" />
             ) : activity.length === 0 ? (
               <EmptyState
@@ -171,10 +191,15 @@ export default function ProfilePage() {
                 description="Changes you make to projects and tasks appear here."
               />
             ) : (
-              <Figure
-                value={activity.length}
-                label={`events in the last ${activity.length}, most recent ${formatDateTime(activity[0]?.createdAt)}`}
-              />
+              // The figure's own number is the count; the label must not restate it.
+              <div className="border-b border-rule px-3 py-2">
+                <Figure
+                  value={activity.length}
+                  label="recorded change, newest first"
+                  plural="recorded changes, newest first"
+                  hint={`Most recent ${formatDateTime(activity[0]?.createdAt)}`}
+                />
+              </div>
             )}
             {activity && activity.length > 0 && (
               <ol className="divide-y divide-rule px-3 py-1">
