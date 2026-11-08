@@ -2,9 +2,10 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
-import { Toaster } from "sonner";
 import { AppearanceProvider } from "@/features/appearance";
+import { PageTitleProvider } from "@/features/page-title";
 import { SessionProvider } from "@/features/session";
+import { ThemedToaster } from "@/components/themed-toaster";
 import { router } from "@/router";
 import "@/styles/globals.css";
 import "@fontsource-variable/public-sans";
@@ -32,12 +33,14 @@ if (!container) throw new Error("The #root element is missing from index.html");
 createRoot(container).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <AppearanceProvider>
-        <SessionProvider>
-          <RouterProvider router={router} context={{ queryClient }} />
-        </SessionProvider>
-      </AppearanceProvider>
+      <PageTitleProvider>
+        <AppearanceProvider>
+          <SessionProvider>
+            <RouterProvider router={router} context={{ queryClient }} />
+            <ThemedToaster />
+          </SessionProvider>
+        </AppearanceProvider>
+      </PageTitleProvider>
     </QueryClientProvider>
-    <Toaster position="bottom-right" offset={16} toastOptions={{ style: { borderRadius: "6px" } }} />
   </StrictMode>,
 );

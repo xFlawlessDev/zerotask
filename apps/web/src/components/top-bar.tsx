@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { signOut } from "@/lib/api/client";
 import { useRequiredSession } from "@/features/session";
 import { useAppearance } from "@/features/appearance";
+import { usePageTitle } from "@/features/page-title";
 import { IconButton } from "@/components/ui/button";
 import { NotificationBell } from "@/components/notification-bell";
 import { IconMoon, IconRail, IconSignOut, IconSun } from "@/components/icon";
@@ -13,10 +14,14 @@ import { initials } from "@/lib/format";
  * The top bar: where you are, who you are, and the two settings that apply
  * everywhere. Everything in it exists; there is no search box that does not search
  * and no avatar menu with one item.
+ *
+ * The title comes from the page's own header, so the bar, the browser tab, and the
+ * h1 cannot disagree.
  */
-export function TopBar({ title, onOpenNavigation }: { title: string; onOpenNavigation: () => void }) {
+export function TopBar({ onOpenNavigation }: { onOpenNavigation: () => void }) {
   const { person } = useRequiredSession();
   const { resolvedTheme, setTheme } = useAppearance();
+  const title = usePageTitle();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 

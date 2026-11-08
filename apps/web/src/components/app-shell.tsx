@@ -3,8 +3,8 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { useRequiredSession } from "@/features/session";
 import { useFavorites, useOverview } from "@/features/hooks";
 import { TopBar } from "@/components/top-bar";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { IconRail, IconStar } from "@/components/icon";
+import { Dialog, DialogContent, DialogClose, DialogTitle } from "@/components/ui/dialog";
+import { IconClose, IconRail, IconStar } from "@/components/icon";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/logo.png";
 import type { ComponentType } from "react";
@@ -17,6 +17,7 @@ import {
   IconOverview,
   IconProjects,
   IconReview,
+  IconTeam,
   IconTemplate,
 } from "@/components/icon";
 
@@ -46,7 +47,7 @@ const NAV: NavItem[] = [
   { to: "/documents", label: "Documents", icon: IconDocument },
   { to: "/cpm", label: "Critical path", icon: IconCriticalPath },
   { to: "/resources", label: "Resources", icon: IconBoard },
-  { to: "/team", label: "Team", icon: IconBoard },
+  { to: "/team", label: "Team", icon: IconTeam },
   { to: "/templates", label: "Templates", icon: IconTemplate, adminOnly: true },
   { to: "/admin", label: "Admin", icon: IconAdmin, adminOnly: true },
 ];
@@ -56,7 +57,7 @@ function isActive(pathname: string, to: string): boolean {
   return pathname === to || pathname.startsWith(`${to}/`);
 }
 
-export function AppShell({ title, children }: { title: string; children: React.ReactNode }) {
+export function AppShell({ children }: { children: React.ReactNode }) {
   const { person, capabilities } = useRequiredSession();
   const { data: overview } = useOverview();
   const { data: favorites } = useFavorites();
@@ -79,9 +80,11 @@ export function AppShell({ title, children }: { title: string; children: React.R
             key={item.to}
             to={item.to}
             aria-current={active ? "page" : undefined}
+            /* The label is visually hidden when collapsed, so the link still needs a name. */
+            aria-label={collapsed ? item.label : undefined}
             title={collapsed ? item.label : undefined}
             className={cn(
-              "group flex h-8 items-center gap-2.5 rounded-control px-2 text-compact font-medium transition-colors duration-100",
+              "group relative flex h-8 items-center gap-2.5 rounded-control px-2 text-compact font-medium transition-colors duration-100",
               active
                 ? "bg-accent-wash text-accent-ink"
                 : "text-ink-muted hover:bg-sunk hover:text-ink",
@@ -91,14 +94,14 @@ export function AppShell({ title, children }: { title: string; children: React.R
             <Icon className="shrink-0" />
             {!collapsed && <span className="truncate">{item.label}</span>}
             {!collapsed && count > 0 && (
-              <span className="tnum ml-auto rounded-mark bg-danger px-1 text-[10px] font-semibold text-surface">
+              <span className="tnum ml-auto rounded-mark bg-danger px-1 text-label font-semibold text-surface">
                 {count}
               </span>
             )}
             {collapsed && count > 0 && (
               <span
                 aria-hidden="true"
-                className="absolute left-9 size-1.5 rounded-full bg-danger"
+                className="absolute top-1 left-6 size-1.5 rounded-full bg-danger"
               />
             )}
           </Link>
@@ -183,14 +186,34 @@ export function AppShell({ title, children }: { title: string; children: React.R
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar title={title} onOpenNavigation={() => setMobileOpen(true)} />
+        <TopBar onOpenNavigation={() => setMobileOpen(true)} />
         <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto">
           {children}
         </main>
       </div>
       <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
-        <DialogContent className="top-0 left-0 flex h-dvh max-h-none w-72 max-w-[85vw] translate-x-0 translate-y-0 flex-col gap-0 rounded-none p-0">
-          <DialogTitle className="border-b border-rule px-4 py-4">Zero Task</DialogTitle>
+        {/*
+         * The drawer sits above the top bar, and its scrim covers the bar's own
+         * controls. Before this, the bar (z-30) painted over the scrim (z-50)
+         * visually but not for hit-testing, so the avatar and the sign-out button
+         * were still in the tab order behind a modal and looked tappable.
+         *
+         * One close control: the dialog's own X, at the same spot as every other
+         * dialog. The previous version put it on top of the avatar.
+         */}
+        <DialogContent
+          showCloseButton={false}
+          className="top-0 left-0 z-[60] flex h-dvh max-h-none w-72 max-w-[85vw] translate-x-0 translate-y-0 flex-col gap-0 rounded-none p-0"
+        >
+          <DialogTitle className="flex items-center justify-between border-b border-rule py-3 pl-4">
+            <span>Zero Task</span>
+            <DialogClose
+              aria-label="Close navigation"
+              className="mr-2 inline-flex size-8 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-sunk hover:text-ink"
+            >
+              <IconClose />
+            </DialogClose>
+          </DialogTitle>
           <nav aria-label="Main" className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
             {items.map((item) => {
               const Icon = item.icon;

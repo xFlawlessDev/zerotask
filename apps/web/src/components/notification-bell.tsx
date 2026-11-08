@@ -65,7 +65,7 @@ export function NotificationBell() {
         {unread > 0 && (
           <span
             aria-hidden="true"
-            className="tnum absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-surface"
+            className="tnum absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-label font-semibold text-surface"
           >
             {unread > 99 ? "99+" : unread}
           </span>

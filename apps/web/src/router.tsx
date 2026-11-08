@@ -37,12 +37,20 @@ function RequireAuth() {
     );
   }
 
-  // Redirects thrown during render escape to the error boundary; <Navigate /> is the render-time form.
+  // The session query is the authority, not the token: a stale token still means a
+  // visitor, and the session load is what decides. <Navigate /> is the render-time
+  // form of a redirect.
   if (!person) {
     return <Navigate to="/auth" />;
   }
 
-  return <AppShell title={document.title.replace(" · Zero Task", "")}>{<Outlet />}</AppShell>;
+  // No title prop: the shell reads the page's own header, so the top bar cannot
+  // name a page other than the one being shown.
+  return (
+    <AppShell>
+      <Outlet />
+    </AppShell>
+  );
 }
 
 const rootRoute = createRootRoute({
@@ -86,6 +94,40 @@ const projectsRoute = createRoute({
 const projectDetailRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/projects/$projectId",
+  component: ProjectDetailPage,
+  /**
+   * Notifications and pinned tasks link at `/projects/:projectId/tasks/:taskId`.
+   * That path used to fall through to the not-found handler and bounce to the
+   * overview, so a link that looked like it named a task opened a different page.
+   * The task id is validated here and handed to the page, which opens the row.
+   */
+  validateSearch: (search: Record<string, unknown>): { task?: string } =>
+    typeof search.task === "string" && search.task.length > 0 ? { task: search.task } : {},
+  head: () => ({ meta: [{ title: "Project · Zero Task" }] }),
+});
+
+/**
+ * `…/tasks/:taskId` is the canonical form the API writes into notification and
+ * favorite hrefs. It renders the same project page with the task selected rather
+ * than introducing a second task screen: the project page already holds every fact
+ * about a task, and one page means one place to look.
+ */
+const projectTaskRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/projects/$projectId/tasks/$taskId",
+  component: ProjectDetailPage,
+  head: () => ({ meta: [{ title: "Project · Zero Task" }] }),
+});
+
+/**
+ * `…/schedule` is what a schedule-change notification links to. The Gantt is the
+ * Schedule tab of the project page, so this route opens that tab rather than
+ * making a second schedule screen. Without it the link fell through to the
+ * not-found handler and bounced to the overview.
+ */
+const projectScheduleRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/projects/$projectId/schedule",
   component: ProjectDetailPage,
   head: () => ({ meta: [{ title: "Project · Zero Task" }] }),
 });
@@ -159,6 +201,8 @@ const routeTree = rootRoute.addChildren([
     overviewRoute,
     projectsRoute,
     projectDetailRoute,
+    projectTaskRoute,
+    projectScheduleRoute,
     myWorkRoute,
     reviewsRoute,
     cpmRoute,

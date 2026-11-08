@@ -1,4 +1,5 @@
 import type { HTMLAttributes, ReactNode } from "react";
+import { usePublishPageTitle } from "@/features/page-title";
 import { cn } from "@/lib/utils";
 
 /**
@@ -46,15 +47,25 @@ export function PanelHeader({
  * A figure with its own definition. The label states the rule that produced the
  * number ("due in the next 7 days"), because a count whose definition has to be
  * guessed is worse than no count.
+ *
+ * `label` is the noun for one of them and `plural` for the rest; when `plural` is
+ * given the label is agreed with a numeric value, so a caller writes
+ * `label="open task" plural="open tasks"` and a count of 1 reads "1 open task"
+ * rather than "1 open tasks". A label without `plural` renders verbatim, which is
+ * what a descriptive phrase like "Open in total" wants.
  */
 export function Figure({
   label,
+  plural: pluralForm,
   value,
   hint,
   tone = "default",
   emphasis,
 }: {
+  /** The label for a count of one, or a verbatim label when `plural` is omitted. */
   label: string;
+  /** The label for any other count. Its presence is what opts into agreement. */
+  plural?: string;
   value: ReactNode;
   hint?: string;
   tone?: "default" | "danger" | "caution" | "settled" | "accent";
@@ -71,12 +82,15 @@ export function Figure({
             ? "text-accent-ink"
             : "text-ink";
 
+  const resolvedLabel =
+    pluralForm && typeof value === "number" ? (value === 1 ? label : pluralForm) : label;
+
   return (
     <div className="min-w-0">
       <div className={cn("tnum font-semibold", emphasis ? "text-figure" : "text-title", toneClass)}>
         {value}
       </div>
-      <div className="mt-0.5 text-meta text-muted-foreground">{label}</div>
+      <div className="mt-0.5 text-meta text-muted-foreground">{resolvedLabel}</div>
       {hint && <div className="mt-1 text-label text-faint">{hint}</div>}
     </div>
   );
@@ -91,7 +105,7 @@ export function LoadingState({ label = "Loading" }: { label?: string }) {
     <div role="status" aria-live="polite" className="flex items-center gap-2 px-3 py-6 text-compact text-muted-foreground">
       <span
         aria-hidden="true"
-        className="inline-block size-3 animate-spin rounded-full border border-rule border-t-accent"
+        className="inline-block size-3 animate-spin rounded-full border border-rule border-t-accent-ink"
       />
       {label}
     </div>
@@ -153,6 +167,10 @@ export function PageHeader({
   meta?: ReactNode;
   actions?: ReactNode;
 }) {
+  // The h1 is the page's name, so it is also what the browser tab and the top bar
+  // show. Publishing from here is what keeps those three in step.
+  usePublishPageTitle(title);
+
   return (
     <header className="border-b border-rule bg-canvas px-4 py-4 sm:px-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
