@@ -223,6 +223,65 @@ describe("API", () => {
     });
   });
 
+  describe("templates", () => {
+    it("writes a template with its tasks and edges, and stamps a project from it", async () => {
+      // The write used to deadlock on PGlite: it read the new template back through
+      // the outer connection while the insert transaction still held the only one.
+      // A hang here is the regression, so the test would time out rather than fail
+      // on an assertion.
+      const created = await request(admin.api, admin.token, "POST", "/templates", {
+        name: "Site go-live",
+        category: "operations",
+        tasks: [
+          { code: "T-01", name: "Survey", durationDays: 2 },
+          { code: "T-02", name: "Install", durationDays: 4, priority: "high" },
+        ],
+        dependencies: [{ predecessorCode: "T-01", successorCode: "T-02" }],
+      });
+
+      expect(created.status).toBe(200);
+      expect(created.body?.code).toBe("TPL-001");
+      expect(created.body?.tasks).toHaveLength(2);
+      expect(created.body?.dependencies).toHaveLength(1);
+
+      const templateId = created.body?.id as string;
+      const stamped = await request(admin.api, admin.token, "POST", `/templates/${templateId}/instantiate`, {
+        name: "First site",
+      });
+
+      expect(stamped.status).toBe(200);
+      expect(stamped.body?.code).toBe("ZR-001");
+    });
+
+    it("captures an existing project's plan, leaving its assignees and dates behind", async () => {
+      const project = await request(admin.api, admin.token, "POST", "/projects", { name: "Ran once" });
+      const projectId = project.body?.id as string;
+
+      await request(admin.api, admin.token, "POST", `/projects/${projectId}/tasks`, {
+        name: "Survey",
+        durationDays: 3,
+      });
+
+      const captured = await request(admin.api, admin.token, "POST", "/templates/capture", {
+        projectId,
+        name: "Repeatable shape",
+      });
+
+      expect(captured.status).toBe(200);
+      expect(captured.body?.tasks).toHaveLength(1);
+      expect(captured.body?.tasks).toEqual([
+        expect.objectContaining({ name: "Survey", durationDays: 3 }),
+      ]);
+    });
+
+    it("refuses template writes to someone who is not an admin", async () => {
+      const { status } = await request(harness.api, harness.token, "POST", "/templates", {
+        name: "Not mine to make",
+      });
+      expect(status).toBe(403);
+    });
+  });
+
   describe("tasks and scheduling", () => {
     it("reports duration-weighted project progress as a percentage", async () => {
       const created = await request(harness.api, harness.token, "POST", "/projects", { name: "Progress example" });
