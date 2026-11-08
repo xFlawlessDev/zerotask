@@ -18,6 +18,7 @@ dist/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+.alnair
 
 # end-to-end test output
 test-results/
