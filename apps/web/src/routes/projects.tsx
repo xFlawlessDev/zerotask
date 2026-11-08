@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { useProjects, useCreateProject } from "@/features/hooks";
+import { useProjects, useCreateProject, useTemplates, useTemplateActions } from "@/features/hooks";
 import { useRequiredSession } from "@/features/session";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +17,7 @@ import { ProjectStatusLabel } from "@/components/ui/status";
 import { IconPlus, IconSearch } from "@/components/icon";
 import { formatDate, formatVariance } from "@/lib/format";
 import type { ProjectStatus } from "@zerotask/domain";
-import { PROJECT_STATUS_LABEL } from "@zerotask/domain";
+import { PROJECT_STATUS_LABEL, countLabel } from "@zerotask/domain";
 
 /**
  * The project list.
@@ -184,6 +184,14 @@ export default function ProjectsPage() {
   );
 }
 
+/**
+ * Two ways to start a project, in one dialog.
+ *
+ * Empty, or from a template. A template is the faster path when the shape of the
+ * work is known, and it is chosen here rather than behind a second button because
+ * "new project" is one decision, not two features: the same form, with the plan
+ * already filled in.
+ */
 function CreateProjectDialog({
   open,
   onOpenChange,
@@ -192,7 +200,11 @@ function CreateProjectDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const create = useCreateProject();
+  const { instantiate } = useTemplateActions();
+  const { data: templates, isLoading: loadingTemplates, error: templatesError } = useTemplates();
 
+  /** Empty string is the blank project; a template id stamps that template. */
+  const [templateId, setTemplateId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [kickoffDate, setKickoffDate] = useState("");
@@ -200,8 +212,15 @@ function CreateProjectDialog({
   const [status, setStatus] = useState<ProjectStatus>("draft");
   const [clientError, setClientError] = useState<string | null>(null);
 
+  const stampable = (templates ?? []).filter((template) => template.taskCount > 0);
+  const chosen = stampable.find((template) => template.id === templateId);
+
+  const pending = create.isPending || instantiate.isPending;
+
   const close = () => {
+    if (pending) return;
     onOpenChange(false);
+    setTemplateId("");
     setName("");
     setDescription("");
     setKickoffDate("");
@@ -217,14 +236,27 @@ function CreateProjectDialog({
       return;
     }
 
+    setClientError(null);
+
     try {
-      await create.mutateAsync({
-        name: name.trim(),
-        description: description.trim() || null,
-        status,
-        kickoffDate: kickoffDate || null,
-        leadTimeDays: leadTimeDays ? Number.parseInt(leadTimeDays, 10) : null,
-      });
+      if (chosen) {
+        // The template carries the tasks, their durations and their edges. The
+        // name and kickoff are the project's own, so they are asked for here and
+        // nothing else is: status and lead time are set later, on the project.
+        await instantiate.mutateAsync({
+          id: chosen.id,
+          name: name.trim(),
+          kickoffDate: kickoffDate || null,
+        });
+      } else {
+        await create.mutateAsync({
+          name: name.trim(),
+          description: description.trim() || null,
+          status,
+          kickoffDate: kickoffDate || null,
+          leadTimeDays: leadTimeDays ? Number.parseInt(leadTimeDays, 10) : null,
+        });
+      }
       close();
     } catch {
       // The mutation already surfaced the server's words as a toast.
@@ -232,17 +264,42 @@ function CreateProjectDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New project</DialogTitle>
           <DialogDescription>
-            A code is generated for you. You can set the target launch date now or leave it until the
-            schedule has run.
+            {chosen
+              ? `${chosen.name} brings ${chosen.taskCount} task${chosen.taskCount === 1 ? "" : "s"} and their dependencies. Assignees and dates stay unset, because they belong to this run.`
+              : "A code is generated for you. You can set the target launch date now or leave it until the schedule has run."}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-3" noValidate>
+          {loadingTemplates ? null : templatesError ? null : stampable.length > 0 ? (
+            <SelectField
+              label="Start from"
+              value={templateId}
+              onChange={(event) => {
+                const next = event.target.value;
+                setTemplateId(next);
+                setClientError(null);
+                // A template's name is a plan, not a project: offering its name
+                // saves a retype, but the person usually wants their own.
+                const template = stampable.find((row) => row.id === next);
+                if (template && name.trim().length === 0) setName(template.name);
+              }}
+              hint="An empty project, or a template whose tasks and dependencies are copied in."
+            >
+              <option value="">Empty project</option>
+              {stampable.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {`${template.code} · ${template.name} (${countLabel(template.taskCount, "task")})`}
+                </option>
+              ))}
+            </SelectField>
+          ) : null}
+
           <TextField
             label="Project name"
             value={name}
@@ -251,47 +308,58 @@ function CreateProjectDialog({
             error={clientError}
           />
 
-          <TextArea
-            label="What is this delivery?"
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            rows={3}
-            hint="One or two sentences. This is what people read before opening the plan."
-          />
-
-          <div className="grid grid-cols-2 gap-3">
+          {chosen ? (
             <DateField
               label="Kickoff date"
               value={kickoffDate}
               onChange={(event) => setKickoffDate(event.target.value)}
+              hint="Defaults to today if left empty."
             />
-            <NumberField
-              label="Lead time"
-              value={leadTimeDays}
-              onChange={(event) => setLeadTimeDays(event.target.value)}
-              suffix="days"
-              hint="Kickoff plus this sets the launch date."
-            />
-          </div>
+          ) : (
+            <>
+              <TextArea
+                label="What is this delivery?"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                rows={3}
+                hint="One or two sentences. This is what people read before opening the plan."
+              />
 
-          <SelectField
-            label="Status"
-            value={status}
-            onChange={(event) => setStatus(event.target.value as ProjectStatus)}
-          >
-            {(Object.keys(PROJECT_STATUS_LABEL) as ProjectStatus[]).map((value) => (
-              <option key={value} value={value}>
-                {PROJECT_STATUS_LABEL[value]}
-              </option>
-            ))}
-          </SelectField>
+              <div className="grid grid-cols-2 gap-3">
+                <DateField
+                  label="Kickoff date"
+                  value={kickoffDate}
+                  onChange={(event) => setKickoffDate(event.target.value)}
+                />
+                <NumberField
+                  label="Lead time"
+                  value={leadTimeDays}
+                  onChange={(event) => setLeadTimeDays(event.target.value)}
+                  suffix="days"
+                  hint="Kickoff plus this sets the launch date."
+                />
+              </div>
+
+              <SelectField
+                label="Status"
+                value={status}
+                onChange={(event) => setStatus(event.target.value as ProjectStatus)}
+              >
+                {(Object.keys(PROJECT_STATUS_LABEL) as ProjectStatus[]).map((value) => (
+                  <option key={value} value={value}>
+                    {PROJECT_STATUS_LABEL[value]}
+                  </option>
+                ))}
+              </SelectField>
+            </>
+          )}
 
           <DialogFooter>
-            <Button type="button" variant="quiet" onClick={close}>
+            <Button type="button" variant="quiet" onClick={close} disabled={pending}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" disabled={create.isPending}>
-              {create.isPending ? "Creating" : "Create project"}
+            <Button type="submit" variant="primary" disabled={pending}>
+              {pending ? "Creating" : chosen ? "Create from template" : "Create project"}
             </Button>
           </DialogFooter>
         </form>

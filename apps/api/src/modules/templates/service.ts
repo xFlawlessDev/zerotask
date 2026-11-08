@@ -93,7 +93,7 @@ export const TemplateService = {
     const [existing] = await db.select({ value: count() }).from(templates);
     const code = `TPL-${String((existing?.value ?? 0) + 1).padStart(3, "0")}`;
 
-    return db.transaction(async (tx) => {
+    const templateId = await db.transaction(async (tx) => {
       const [template] = await tx
         .insert(templates)
         .values({
@@ -150,8 +150,13 @@ export const TemplateService = {
         }
       }
 
-      return TemplateService.detail(db, template.id);
+      return template.id;
     });
+
+    // Read outside the transaction. Reading the rows back through the outer
+    // connection while the write transaction still holds it deadlocks on PGlite,
+    // which has a single connection: the request hangs instead of failing.
+    return TemplateService.detail(db, templateId);
   },
 
   async remove(db: Database, templateId: string) {
