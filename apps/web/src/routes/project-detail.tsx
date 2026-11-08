@@ -1,19 +1,23 @@
-import { useState } from "react";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { useProject, useProjectTasks, useUpdateProject, useTimeline, useSubmissions, useProjectActivity, useDeleteProject, useMilestoneActions, usePeopleLookup, useProjectMemberActions } from "@/features/hooks";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useParams, useRouterState } from "@tanstack/react-router";
+import { useProject, useProjectTasks, useUpdateProject, useTimeline, useSubmissions, useProjectActivity, useDeleteProject, useMilestoneActions, usePeopleLookup, useProjectMemberActions, useDocuments } from "@/features/hooks";
 import { useRequiredSession } from "@/features/session";
+import { canEditProject, canManageProject, effectiveProjectRole } from "@/features/project/role";
+import { UploadDialog } from "@/features/documents/upload-dialog";
 import { Button, IconButton } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState, ErrorState, LoadingState, Figure, PageHeader } from "@/components/ui/surface";
-import { PriorityLabel, StatusLabel, Tag } from "@/components/ui/status";
+import { ConfirmDialog } from "@/components/ui/confirm";
+import { PriorityLabel, MilestoneStatusLabel, StatusLabel, Tag } from "@/components/ui/status";
 import { DateField, SelectField, TextArea, TextField } from "@/components/ui/field";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScheduleTab } from "@/features/project/schedule-tab";
 import { TaskEditor } from "@/features/project/task-editor";
 import { SubmitTaskDialog } from "@/features/project/submit-task-dialog";
-import { projectRoleAtLeast } from "@zerotask/domain";
 import { formatShortDate, formatDate, formatVariance } from "@/lib/format";
+import { countLabel } from "@zerotask/domain";
 import { cn } from "@/lib/utils";
+import type { ProjectDetail } from "@/lib/api/types";
 import type { TaskStatus } from "@zerotask/domain";
 
 /**
@@ -24,17 +28,44 @@ import type { TaskStatus } from "@zerotask/domain";
  * shows is a fact about the plan, not a decoration.
  */
 export default function ProjectDetailPage() {
-  const { projectId } = useParams({ from: "/app/projects/$projectId" });
+  // One component serves both `/projects/:projectId` and
+  // `/projects/:projectId/tasks/:taskId`, so the params are read loosely: the
+  // project id is present on both, and the task id only on the second.
+  const { projectId } = useParams({ strict: false }) as { projectId: string };
   const { capabilities, person } = useRequiredSession();
   const navigate = useNavigate();
 
+  /**
+   * A notification or a pinned task arrives as `/projects/:id/tasks/:taskId`, and a
+   * schedule-change notification as `/projects/:id/schedule`. The page reads which
+   * section the URL names and opens the matching tab, so the link lands on the thing
+   * it named.
+   */
+  const linked = useRouterState({
+    select: (state) => {
+      const task = state.location.pathname.match(/\/tasks\/([^/]+)$/)?.[1] ?? null;
+      if (task) return { tab: "tasks", taskId: task };
+      if (/\/schedule$/.test(state.location.pathname)) return { tab: "schedule", taskId: null };
+      return { tab: "tasks", taskId: null };
+    },
+  });
+  const linkedTaskId = linked.taskId;
+
   const { data: project, isLoading, error, refetch } = useProject(projectId);
   const { data: timeline, error: timelineError, refetch: refetchTimeline } = useTimeline(projectId);
-  const { data: submissions } = useSubmissions(projectId);
+  const { data: submissions, error: submissionsError } = useSubmissions(projectId);
 
   const remove = useDeleteProject();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [tab, setTab] = useState("tasks");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  // A deep link is only meaningful once the page has loaded, so the tab is selected
+  // from the URL after mount rather than only on first render.
+  useEffect(() => {
+    setTab(linked.tab);
+  }, [linked.tab, linkedTaskId]);
 
   if (error) {
     return (
@@ -55,12 +86,27 @@ export default function ProjectDetailPage() {
     project.targetLaunchDate !== null &&
     project.baselinedEndDate > project.targetLaunchDate;
 
-  const pendingReviews = submissions?.filter((s) => s.status === "pending_review").length ?? 0;
+  /**
+   * The review badge is a fact about the plan, so a failed request must not render
+   * as zero. `null` means "the count is unknown", which is a different statement
+   * from "nothing is waiting", and the header says so instead of going quiet.
+   */
+  const pendingReviews = submissions
+    ? submissions.filter((submission) => submission.status === "pending_review").length
+    : null;
+
+  /**
+   * One answer per question, derived from the same role the API guard reads.
+   * Every panel gets these instead of re-deriving its own rule, so no control can
+   * drift ahead of what the server will accept.
+   */
+  const myRole = effectiveProjectRole(project, person.id, capabilities);
+  const canManage = canManageProject(myRole);
+  const canEdit = canEditProject(myRole);
+  const canDeleteProject = myRole === "owner";
 
   const confirmDelete = async () => {
-    if (project.taskCount > 0 && !window.confirm(`Delete ${project.code} and its ${project.taskCount} tasks? The history stays in the database but the project leaves every list.`)) {
-      return;
-    }
+    setConfirmingDelete(false);
     await remove.mutateAsync(project.id);
     void navigate({ to: "/projects" });
   };
@@ -81,7 +127,7 @@ export default function ProjectDetailPage() {
               {project.ownerName ? `Owned by ${project.ownerName}` : "No owner"}
             </span>
             <span className="text-meta text-ink-muted">
-              {project.openTaskCount} of {project.taskCount} tasks open
+              {project.openTaskCount} of {project.taskCount} {project.taskCount === 1 ? "task" : "tasks"} open
             </span>
             <span className="tnum text-meta">
               <span className={late ? "text-danger" : "text-ink-muted"}>
@@ -105,12 +151,26 @@ export default function ProjectDetailPage() {
         }
         actions={
           <>
-            {pendingReviews > 0 && (
-              <Button asChild variant="secondary" size="sm">
-                <Link to="/reviews" aria-label={`${pendingReviews} submissions waiting for review`}>
-                  {pendingReviews} to review
+            {pendingReviews === null ? (
+              <Button asChild variant="quiet" size="sm">
+                <Link
+                  to="/reviews"
+                  aria-label={`The number of submissions waiting for review could not be loaded${submissionsError ? `: ${submissionsError.message}` : ""}`}
+                >
+                  Reviews unavailable
                 </Link>
               </Button>
+            ) : (
+              pendingReviews > 0 && (
+                <Button asChild variant="secondary" size="sm">
+                  <Link
+                    to="/reviews"
+                    aria-label={`${countLabel(pendingReviews, "submission")} waiting for review`}
+                  >
+                    {pendingReviews} to review
+                  </Link>
+                </Button>
+              )
             )}
             <Button variant="secondary" size="sm" onClick={() => setSettingsOpen(true)}>
               Settings
@@ -120,29 +180,30 @@ export default function ProjectDetailPage() {
       />
 
       <div className="p-4 sm:p-6">
-        <Tabs defaultValue="tasks">
+        <Tabs value={tab} onValueChange={setTab}>
           <TabsList aria-label="Project sections">
             <TabsTrigger value="tasks">Tasks</TabsTrigger>
             <TabsTrigger value="schedule">Schedule</TabsTrigger>
             <TabsTrigger value="submissions">
               Submissions
-              {pendingReviews > 0 && (
-                <span className="tnum rounded-mark bg-caution px-1 text-[10px] font-semibold text-surface">
+              {pendingReviews !== null && pendingReviews > 0 && (
+                <span className="tnum rounded-mark bg-caution px-1 text-label font-semibold text-surface">
                   {pendingReviews}
                 </span>
               )}
             </TabsTrigger>
             <TabsTrigger value="milestones">Milestones</TabsTrigger>
+            <TabsTrigger value="documents">Documents</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
             <TabsTrigger value="team">Team</TabsTrigger>
           </TabsList>
 
           <TabsContent value="tasks">
-            <TasksPanel project={project} personId={person.id} canEdit={capabilities.role === "admin" || projectRoleAtLeast(project.members.find((member) => member.userId === person.id)?.role, "member")} canManagePlan={capabilities.role === "admin" || projectRoleAtLeast(project.members.find((member) => member.userId === person.id)?.role, "manager")} />
+            <TasksPanel project={project} personId={person.id} canEdit={canEdit} canManagePlan={canManage} highlightedTaskId={linkedTaskId} />
           </TabsContent>
 
           <TabsContent value="schedule">
-            <ScheduleTab projectId={project.id} timeline={timeline} error={!!timelineError} onRetry={() => void refetchTimeline()} canRecalculate={capabilities.role === "admin" || projectRoleAtLeast(project.members.find((member) => member.userId === person.id)?.role, "member")} />
+            <ScheduleTab projectId={project.id} timeline={timeline} error={!!timelineError} onRetry={() => void refetchTimeline()} canRecalculate={canEdit} />
           </TabsContent>
 
           <TabsContent value="submissions">
@@ -150,7 +211,11 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="milestones">
-            <MilestonesPanel projectId={project.id} />
+            <MilestonesPanel project={project} canManage={canManage} />
+          </TabsContent>
+
+          <TabsContent value="documents">
+            <ProjectDocumentsPanel projectId={project.id} />
           </TabsContent>
 
           <TabsContent value="activity">
@@ -158,7 +223,7 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="team">
-            <TeamPanel projectId={project.id} canManage={capabilities.role === "admin" || projectRoleAtLeast(project.members.find((member) => member.userId === person.id)?.role, "manager")} />
+            <TeamPanel project={project} canManage={canManage} />
           </TabsContent>
         </Tabs>
       </div>
@@ -167,8 +232,21 @@ export default function ProjectDetailPage() {
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
         project={project}
-        canManage={capabilities.createProject}
-        onDelete={() => void confirmDelete()}
+        canManage={canManage}
+        canDelete={canDeleteProject}
+        onRequestDelete={() => setConfirmingDelete(true)}
+      />
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+        title="Delete this project?"
+        description={`${project.code} ${project.name} and its ${project.taskCount} ${
+          project.taskCount === 1 ? "task" : "tasks"
+        } leave every list. The history stays in the database, but nothing on screen points at it any more. This cannot be undone from here.`}
+        confirmLabel="Delete project"
+        pending={remove.isPending}
+        onConfirm={() => void confirmDelete()}
       />
     </>
   );
@@ -184,10 +262,31 @@ function ProjectStatusLabelInline({ status }: { status: string }) {
 
 const STATUS_ORDER: TaskStatus[] = ["in_progress", "pending_review", "blocked", "not_started", "completed", "cancelled"];
 
-function TasksPanel({ project, personId, canEdit, canManagePlan }: { project: import("@/lib/api/types").ProjectDetail; personId: string; canEdit: boolean; canManagePlan: boolean }) {
+function TasksPanel({
+  project,
+  personId,
+  canEdit,
+  canManagePlan,
+  highlightedTaskId,
+}: {
+  project: import("@/lib/api/types").ProjectDetail;
+  personId: string;
+  canEdit: boolean;
+  canManagePlan: boolean;
+  /** Set when the URL named one task; that row is marked so the link's target is visible. */
+  highlightedTaskId?: string | null;
+}) {
   const { data, isLoading, error, refetch } = useProjectTasks(project.id);
   const [editing, setEditing] = useState<import("@/lib/api/types").Task | null | undefined>(undefined);
   const [submitting, setSubmitting] = useState<import("@/lib/api/types").Task | null>(null);
+
+  // Bring a linked task into view once the rows exist, so following a notification
+  // does not land on a table whose target is far below the fold.
+  useEffect(() => {
+    if (!highlightedTaskId || !data) return;
+    const row = document.getElementById(`task-row-${highlightedTaskId}`);
+    row?.scrollIntoView({ block: "center" });
+  }, [highlightedTaskId, data]);
 
   if (error) {
     return <ErrorState description="The task list could not be loaded." action={<Button onClick={() => void refetch()}>Try again</Button>} />;
@@ -224,7 +323,15 @@ function TasksPanel({ project, personId, canEdit, canManagePlan }: { project: im
         </thead>
         <tbody className="divide-y divide-rule">
           {tasks.map((task) => (
-            <tr key={task.id} className="h-(--row-height) transition-colors hover:bg-sunk">
+            <tr
+              key={task.id}
+              id={`task-row-${task.id}`}
+              aria-current={highlightedTaskId === task.id ? "true" : undefined}
+              className={cn(
+                "h-(--row-height) transition-colors hover:bg-sunk",
+                highlightedTaskId === task.id && "bg-accent-wash",
+              )}
+            >
               <td className="px-3 font-mono text-meta text-ink-muted tnum">{task.code}</td>
               <td className="min-w-48 max-w-72 px-3">
                 <span className="block truncate text-compact text-ink">{task.name}</span>
@@ -318,13 +425,19 @@ function SubmissionStatusLabel({ status }: { status: string }) {
 
 // --- milestones --------------------------------------------------------------
 
-function MilestonesPanel({ projectId }: { projectId: string }) {
-  const { data: project } = useProject(projectId);
-  const { create, update, remove } = useMilestoneActions(projectId);
+/**
+ * The project is passed in rather than fetched again. It is already loaded by the
+ * page, which has its own error and loading states; a second query for the same row
+ * could only fail on its own and leave this panel rendering an empty list that looks
+ * like "no milestones" or "no members".
+ */
+function MilestonesPanel({ project, canManage }: { project: ProjectDetail; canManage: boolean }) {
+  const { create, update, remove } = useMilestoneActions(project.id);
   const [name, setName] = useState("");
   const [targetDate, setTargetDate] = useState("");
+  const [deleting, setDeleting] = useState<string | null>(null);
 
-  const milestones = project?.milestones ?? [];
+  const milestones = project.milestones;
 
   const add = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -336,19 +449,25 @@ function MilestonesPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <form onSubmit={(event) => void add(event)} className="flex flex-wrap items-end gap-3 rounded-panel border border-rule bg-surface p-3">
-        <TextField
-          label="Milestone name"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          className="min-w-48 flex-1"
-          placeholder="e.g. Integration in staging"
-        />
-        <DateField label="Target date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} />
-        <Button type="submit" variant="primary" disabled={name.trim().length < 2}>
-          Add milestone
-        </Button>
-      </form>
+      {canManage ? (
+        <form onSubmit={(event) => void add(event)} className="flex flex-wrap items-end gap-3 rounded-panel border border-rule bg-surface p-3">
+          <TextField
+            label="Milestone name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="min-w-48 flex-1"
+            placeholder="e.g. Integration in staging"
+          />
+          <DateField label="Target date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} />
+          <Button type="submit" variant="primary" disabled={name.trim().length < 2}>
+            Add milestone
+          </Button>
+        </form>
+      ) : (
+        <p className="rounded-panel border border-rule bg-sunk px-3 py-2 text-meta text-ink-muted">
+          Milestones are managed by this project&apos;s managers. You can read them here.
+        </p>
+      )}
 
       {milestones.length === 0 ? (
         <div className="rounded-panel border border-rule bg-surface">
@@ -360,36 +479,129 @@ function MilestonesPanel({ projectId }: { projectId: string }) {
       ) : (
         <ul className="overflow-hidden rounded-panel border border-rule bg-surface">
           {milestones.map((milestone) => (
-            <li key={milestone.id} className="flex h-(--row-height) items-center gap-3 border-b border-rule px-3 last:border-b-0">
-              <span className="min-w-0 flex-1 truncate text-compact text-ink">{milestone.name}</span>
+            <li key={milestone.id} className="flex min-h-(--row-height) flex-wrap items-center gap-3 border-b border-rule px-3 py-1.5 last:border-b-0">
+              <span className="min-w-0 flex-1 basis-40 truncate text-compact text-ink">{milestone.name}</span>
               <span className="tnum text-meta text-ink-muted">
-                {milestone.completedTaskCount}/{milestone.taskCount} tasks
+                {milestone.completedTaskCount}/{milestone.taskCount} {milestone.taskCount === 1 ? "task" : "tasks"}
               </span>
               <span className="tnum w-24 text-right text-meta text-ink-muted">
                 {formatShortDate(milestone.targetDate)}
               </span>
-              <select
-                aria-label={`Status of ${milestone.name}`}
-                value={milestone.status}
-                onChange={(event) =>
-                  void update.mutateAsync({
-                    milestoneId: milestone.id,
-                    status: event.target.value as "not_started" | "in_progress" | "completed",
-                  })
-                }
-                className="h-7 rounded-control border border-input bg-surface px-2 text-meta"
-              >
-                <option value="not_started">Not reached</option>
-                <option value="in_progress">In progress</option>
-                <option value="completed">Reached</option>
-              </select>
-              <IconButton label={`Remove ${milestone.name}`} variant="danger" onClick={() => void remove.mutateAsync(milestone.id)}>
-                ✕
-              </IconButton>
+              {canManage ? (
+                <>
+                  <select
+                    aria-label={`Status of ${milestone.name}`}
+                    value={milestone.status}
+                    onChange={(event) =>
+                      void update.mutateAsync({
+                        milestoneId: milestone.id,
+                        status: event.target.value as "not_started" | "in_progress" | "completed",
+                      })
+                    }
+                    className="h-7 rounded-control border border-input bg-surface px-2 text-meta"
+                  >
+                    <option value="not_started">Not reached</option>
+                    <option value="in_progress">In progress</option>
+                    <option value="completed">Reached</option>
+                  </select>
+                  <IconButton
+                    label={`Remove ${milestone.name}`}
+                    variant="danger"
+                    onClick={() => setDeleting(milestone.id)}
+                  >
+                    ✕
+                  </IconButton>
+                </>
+              ) : (
+                <MilestoneStatusLabel status={milestone.status} />
+              )}
             </li>
           ))}
         </ul>
       )}
+
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title="Remove this milestone?"
+        description={milestoneRemoval(milestones.find((milestone) => milestone.id === deleting))}
+        confirmLabel="Remove milestone"
+        pending={remove.isPending}
+        onConfirm={() => {
+          if (deleting) void remove.mutateAsync(deleting);
+          setDeleting(null);
+        }}
+      />
+    </div>
+  );
+}
+
+/** What removing a milestone actually means, in one place. */
+function milestoneRemoval(milestone: { name: string; taskCount: number } | undefined): string {
+  if (!milestone) return "This milestone stops being a target. Tasks attached to it stay in the plan.";
+  return `${milestone.name} stops being a target. Its ${countLabel(milestone.taskCount, "task")} ${
+    milestone.taskCount === 1 ? "stays" : "stay"
+  } in the plan; only the milestone goes.`;
+}
+
+// --- documents ---------------------------------------------------------------
+function ProjectDocumentsPanel({ projectId }: { projectId: string }) {
+  const { data, isLoading, error, refetch } = useDocuments(projectId);
+  const [uploadOpen, setUploadOpen] = useState(false);
+
+  const rows = data?.items ?? [];
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-meta text-ink-muted">
+          Files attached to this project or to one of its tasks.
+        </p>
+        <Button variant="primary" size="sm" onClick={() => setUploadOpen(true)}>
+          Add document
+        </Button>
+      </div>
+
+      {error ? (
+        <ErrorState
+          description="The documents for this project could not be loaded."
+          action={<Button onClick={() => void refetch()}>Try again</Button>}
+        />
+      ) : isLoading ? (
+        <LoadingState label="Loading documents" />
+      ) : rows.length === 0 ? (
+        <div className="rounded-panel border border-rule bg-surface">
+          <EmptyState
+            title="No documents on this project"
+            description="Specifications, site photos, and signed reports attached to this project or its tasks appear here."
+            action={
+              <Button variant="secondary" size="sm" onClick={() => setUploadOpen(true)}>
+                Add the first document
+              </Button>
+            }
+          />
+        </div>
+      ) : (
+        <ul className="overflow-hidden rounded-panel border border-rule bg-surface">
+          {rows.map((row) => (
+            <li key={row.id} className="flex min-h-(--row-height) flex-wrap items-center gap-x-3 gap-y-1 border-b border-rule px-3 py-1.5 last:border-b-0">
+              <span className="tnum w-24 shrink-0 font-mono text-meta text-ink-muted">{row.code}</span>
+              <span className="min-w-0 flex-1 basis-48 truncate text-compact text-ink" title={row.name}>
+                {row.name}
+              </span>
+              {row.taskCode && (
+                <span className="tnum text-meta text-ink-muted">{row.taskCode}</span>
+              )}
+              <span className="text-meta text-ink-muted">{row.uploadedByName ?? "Unknown"}</span>
+              <span className="tnum w-28 text-right text-meta text-faint">
+                {formatShortDate(row.createdAt.slice(0, 10))}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <UploadDialog open={uploadOpen} onOpenChange={setUploadOpen} projectId={projectId} />
     </div>
   );
 }
@@ -397,7 +609,16 @@ function MilestonesPanel({ projectId }: { projectId: string }) {
 // --- activity ----------------------------------------------------------------
 
 function ActivityPanel({ projectId }: { projectId: string }) {
-  const { data, isLoading } = useProjectActivity(projectId);
+  const { data, isLoading, error, refetch } = useProjectActivity(projectId);
+
+  if (error) {
+    return (
+      <ErrorState
+        description="The activity log could not be loaded. An empty log and a failed request are different things, so nothing is reported as 'no activity' until the request succeeds."
+        action={<Button onClick={() => void refetch()}>Try again</Button>}
+      />
+    );
+  }
 
   if (isLoading) return <LoadingState label="Loading activity" />;
 
@@ -433,14 +654,14 @@ function ActivityPanel({ projectId }: { projectId: string }) {
 
 // --- team --------------------------------------------------------------------
 
-function TeamPanel({ projectId, canManage }: { projectId: string; canManage: boolean }) {
-  const { data: project } = useProject(projectId);
+function TeamPanel({ project, canManage }: { project: ProjectDetail; canManage: boolean }) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState("");
   const [role, setRole] = useState<"viewer" | "member" | "manager">("member");
+  const [removing, setRemoving] = useState<{ userId: string; label: string } | null>(null);
   const { data: people, isLoading: loadingPeople, error: peopleError } = usePeopleLookup(search);
-  const actions = useProjectMemberActions(projectId);
-  const members = project?.members ?? [];
+  const actions = useProjectMemberActions(project.id);
+  const members = project.members;
   const available = (people ?? []).filter((person) => !members.some((member) => member.userId === person.id));
 
   return (
@@ -453,14 +674,31 @@ function TeamPanel({ projectId, canManage }: { projectId: string; canManage: boo
       </div>}
       <ul className="divide-y divide-rule">
         {members.map((member) => (
-          <li key={member.userId} className="flex h-(--row-height) items-center gap-3 px-3">
-            <span className="min-w-0 flex-1 truncate text-compact text-ink">{member.name ?? member.email}</span>
-            {canManage && member.userId !== project?.ownerId ? <select aria-label={`Project role of ${member.name ?? member.email}`} value={member.role} disabled={actions.updateRole.isPending} onChange={(event) => actions.updateRole.mutate({ userId: member.userId, role: event.target.value as "viewer" | "member" | "manager" })} className="h-8 rounded-control border border-input bg-surface px-2 text-meta"><option value="viewer">Viewer</option><option value="member">Member</option><option value="manager">Manager</option>{member.role === "owner" && <option value="owner">Owner</option>}</select> : <span className="text-meta text-ink-muted">{member.role}</span>}
+          <li key={member.userId} className="flex min-h-(--row-height) flex-wrap items-center gap-3 px-3 py-1.5">
+            <span className="min-w-0 flex-1 basis-40 truncate text-compact text-ink">{member.name ?? member.email}</span>
+            {canManage && member.userId !== project.ownerId ? <select aria-label={`Project role of ${member.name ?? member.email}`} value={member.role} disabled={actions.updateRole.isPending} onChange={(event) => actions.updateRole.mutate({ userId: member.userId, role: event.target.value as "viewer" | "member" | "manager" })} className="h-8 rounded-control border border-input bg-surface px-2 text-meta"><option value="viewer">Viewer</option><option value="member">Member</option><option value="manager">Manager</option>{member.role === "owner" && <option value="owner">Owner</option>}</select> : <span className="text-meta text-ink-muted">{member.role}</span>}
             <span className="tnum hidden text-meta text-ink-muted sm:block">{member.openTasks} open</span>
-            {canManage && member.userId !== project?.ownerId && <Button size="sm" variant="danger" disabled={actions.remove.isPending} onClick={() => { if (window.confirm(`Remove ${member.name ?? member.email} from this project? Their assigned tasks will become unassigned.`)) actions.remove.mutate(member.userId); }}>Remove</Button>}
+            {canManage && member.userId !== project.ownerId && <Button size="sm" variant="danger" disabled={actions.remove.isPending} onClick={() => setRemoving({ userId: member.userId, label: member.name ?? member.email })}>Remove</Button>}
           </li>
         ))}
       </ul>
+
+      <ConfirmDialog
+        open={removing !== null}
+        onOpenChange={(open) => !open && setRemoving(null)}
+        title="Remove this person from the project?"
+        description={
+          removing
+            ? `${removing.label} loses access to this project, and their assigned tasks become unassigned. Their name stays on work they already did.`
+            : ""
+        }
+        confirmLabel="Remove from project"
+        pending={actions.remove.isPending}
+        onConfirm={() => {
+          if (removing) actions.remove.mutate(removing.userId);
+          setRemoving(null);
+        }}
+      />
     </div>
   );
 }
@@ -472,13 +710,15 @@ function ProjectSettingsDialog({
   onOpenChange,
   project,
   canManage,
-  onDelete,
+  canDelete,
+  onRequestDelete,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   project: NonNullable<ReturnType<typeof useProject>["data"]>;
   canManage: boolean;
-  onDelete: () => void;
+  canDelete: boolean;
+  onRequestDelete: () => void;
 }) {
   const update = useUpdateProject(project.id);
 
@@ -486,6 +726,14 @@ function ProjectSettingsDialog({
   const [description, setDescription] = useState(project.description?.split("\n\ntemplate:")[0] ?? "");
   const [status, setStatus] = useState(project.status);
   const [targetLaunchDate, setTargetLaunchDate] = useState(project.targetLaunchDate ?? "");
+
+  /** Restores the dialog to the saved row, which is what Cancel promises. */
+  const reset = () => {
+    setName(project.name);
+    setDescription(project.description?.split("\n\ntemplate:")[0] ?? "");
+    setStatus(project.status);
+    setTargetLaunchDate(project.targetLaunchDate ?? "");
+  };
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -498,8 +746,22 @@ function ProjectSettingsDialog({
     onOpenChange(false);
   };
 
+  /**
+   * Cancel and Escape close without writing, so the form must forget the draft it
+   * was holding. The previous version kept the typed values, and reopening the
+   * dialog after "Cancel" showed edits that had never been saved.
+   */
+  const cancel = (nextOpen: boolean) => {
+    if (!nextOpen) reset();
+    onOpenChange(nextOpen);
+  };
+
+  const readOnlyReason = canManage
+    ? undefined
+    : "Read-only: changing a project's plan needs manager rights on this project. Ask its owner or a manager.";
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={cancel}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Project settings</DialogTitle>
@@ -507,6 +769,12 @@ function ProjectSettingsDialog({
             The code {project.code} is fixed. Dates here feed the schedule the next time it runs.
           </DialogDescription>
         </DialogHeader>
+
+        {readOnlyReason && (
+          <p className="rounded-control border border-rule bg-sunk px-2.5 py-2 text-meta text-ink-muted">
+            {readOnlyReason}
+          </p>
+        )}
 
         <form onSubmit={(event) => void save(event)} className="flex flex-col gap-3" noValidate>
           <TextField label="Name" value={name} onChange={(event) => setName(event.target.value)} required disabled={!canManage} />
@@ -540,16 +808,16 @@ function ProjectSettingsDialog({
           </div>
 
           <div className="rounded-control border border-rule bg-sunk px-2.5 py-2 text-meta text-ink-muted">
-            {project.progressPercent}% of the planned duration is done across {project.taskCount} tasks.
+            {project.progressPercent}% of the planned duration is done across {countLabel(project.taskCount, "task")}.
           </div>
 
           <DialogFooter>
-            {canManage && (
-              <Button type="button" variant="danger" onClick={onDelete} className="mr-auto">
+            {canDelete && (
+              <Button type="button" variant="danger" onClick={onRequestDelete} className="mr-auto">
                 Delete project
               </Button>
             )}
-            <Button type="button" variant="quiet" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="quiet" onClick={() => cancel(false)}>
               Cancel
             </Button>
             <Button type="submit" variant="primary" disabled={update.isPending || !canManage}>
