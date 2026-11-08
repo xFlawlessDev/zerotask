@@ -12,7 +12,9 @@ test.describe("authentication", () => {
   test("a visitor is sent to sign-in before seeing any project data", async ({ page }) => {
     await page.goto("/projects");
     await expect(page).toHaveURL(/\/auth$/);
-    await expect(page.getByRole("tab", { name: "Sign in" })).toHaveAttribute("aria-selected", "true");
+    // The sign-in page is one form, not a tab strip: the tab it used to assert on
+    // no longer exists.
+    await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
   });
 
   test("a wrong password is refused with a message next to the field", async ({ page }) => {
@@ -37,6 +39,24 @@ test.describe("authentication", () => {
     await expect(page).toHaveURL(/\/auth$/);
     await page.goto("/my-work");
     await expect(page).toHaveURL(/\/auth$/);
+  });
+
+  /**
+   * Switching accounts used to need a page reload: the shell kept rendering the
+   * previous person because the session query never re-read the token, even though
+   * the requests it made were already carrying the new one.
+   */
+  test("signing in as someone else after signing out replaces the old account", async ({ page }) => {
+    await signIn(page, people.staff);
+    await expect(page.getByTestId("topbar")).toContainText("Budi Santoso");
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page).toHaveURL(/\/auth$/);
+
+    await signIn(page, people.lead);
+    await expect(page.getByTestId("topbar")).toContainText("Sari Wulandari");
+    await expect(page.getByText(/Signed in as Sari Wulandari/)).toBeVisible();
+    await expect(page.getByTestId("topbar")).not.toContainText("Budi Santoso");
   });
 });
 

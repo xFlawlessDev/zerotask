@@ -18,10 +18,32 @@ export function getToken(): string | null {
   return sessionStorage.getItem(TOKEN_KEY);
 }
 
+/**
+ * The token is the one piece of auth state React has to react to.
+ *
+ * Without a subscription, signing out emptied sessionStorage and nothing
+ * re-rendered: the session query kept the options it was rendered with, stayed
+ * enabled, and only a page reload made the shell notice. The listeners here let
+ * the session provider flip `enabled` the moment the token appears or disappears.
+ */
+const tokenListeners = new Set<() => void>();
+
+export function subscribeToken(listener: () => void): () => void {
+  tokenListeners.add(listener);
+  return () => {
+    tokenListeners.delete(listener);
+  };
+}
+
 export function setToken(token: string | null): void {
   if (typeof sessionStorage === "undefined") return;
+  const previous = sessionStorage.getItem(TOKEN_KEY);
   if (token) sessionStorage.setItem(TOKEN_KEY, token);
   else sessionStorage.removeItem(TOKEN_KEY);
+
+  if (previous !== token) {
+    for (const listener of tokenListeners) listener();
+  }
 }
 
 export class ApiRequestError extends Error {

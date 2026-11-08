@@ -30,6 +30,13 @@ export default function AuthPage() {
     setBusy(true);
 
     try {
+      // A previous account's data may still be cached: its token expired, so the
+      // shell bounced here without ever running sign-out. Dropping the cache before
+      // the token changes keeps one person's rows from ever painting under another's
+      // name. It happens before sign-in because clearing afterwards would destroy the
+      // session query the provider has already subscribed to.
+      queryClient.clear();
+
       await signIn({ email, password });
 
       // The session query was created while signed out, so it is disabled and nothing

@@ -1,7 +1,7 @@
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useSyncExternalStore, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { getToken } from "@/lib/api/client";
+import { getToken, subscribeToken } from "@/lib/api/client";
 import type { Capabilities, Department, Person, SessionResponse } from "@/lib/api/types";
 import type { Role } from "@zerotask/domain";
 
@@ -29,17 +29,23 @@ const SessionContext = createContext<SessionValue | null>(null);
 export function SessionProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
 
+  // Read through a subscription so a sign-in or sign-out re-renders this provider.
+  // Reading sessionStorage directly during render left `enabled` frozen at whatever
+  // it was on first paint: after signing out the stale options kept the query alive,
+  // and after signing in as someone else the new token only took effect on reload.
+  const token = useSyncExternalStore(subscribeToken, getToken, () => null);
+
   const { data, isLoading } = useQuery({
     queryKey: ["session"],
     queryFn: () => api.session.get(),
     // The token lives in sessionStorage; a visitor without one cannot be signed in.
-    enabled: getToken() !== null,
+    enabled: token !== null,
     staleTime: 5 * 60 * 1000,
     retry: false,
   });
 
   const value: SessionValue = {
-    loading: getToken() !== null && isLoading,
+    loading: token !== null && isLoading,
     person: data?.authenticated ? data.user : null,
     capabilities: data?.authenticated ? data.capabilities : null,
     departments: data?.authenticated ? data.departments : [],
