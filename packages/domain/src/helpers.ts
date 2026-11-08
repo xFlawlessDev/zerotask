@@ -115,3 +115,47 @@ export const OPEN_TASK_STATUSES: readonly TaskStatus[] = [
   "pending_review",
   "blocked",
 ];
+
+/**
+ * The window the Resources page reports on, as a trailing range that ends today.
+ *
+ * It looks backwards on purpose: utilisation is a statement about what people
+ * actually did, and logged hours are written for days that have already happened.
+ * A window running forward from today is always empty, which reads as "nobody
+ * worked" instead of "you are asking about the future".
+ */
+export function workloadWindow(days: number, today: string): { from: string; to: string } {
+  const end = Date.parse(`${today}T00:00:00Z`);
+  if (Number.isNaN(end)) return { from: today, to: today };
+
+  const start = end - (Math.max(1, days) - 1) * 86_400_000;
+  return { from: new Date(start).toISOString().slice(0, 10), to: today.slice(0, 10) };
+}
+
+/** Weekdays inside an inclusive ISO range, which is the capacity a window holds. */
+export function countWeekdays(from: string, to: string): number {
+  const start = Date.parse(`${from}T00:00:00Z`);
+  const end = Date.parse(`${to}T00:00:00Z`);
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return 0;
+
+  let days = 0;
+  for (let cursor = start; cursor <= end; cursor += 86_400_000) {
+    const weekday = new Date(cursor).getUTCDay();
+    if (weekday !== 0 && weekday !== 6) days++;
+  }
+  return days;
+}
+
+/**
+ * "1 project", "2 projects". Counts are read aloud and skimmed, and "1 active
+ * projects" reads as a bug even when the number is right. The plural is explicit
+ * for the words English does not form with a trailing `s` (person/people).
+ */
+export function plural(count: number, singular: string, pluralForm?: string): string {
+  return count === 1 ? singular : (pluralForm ?? `${singular}s`);
+}
+
+/** A count with its noun, already agreed: "1 active project", "3 tasks". */
+export function countLabel(count: number, singular: string, pluralForm?: string): string {
+  return `${count} ${plural(count, singular, pluralForm)}`;
+}

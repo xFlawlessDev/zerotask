@@ -1,5 +1,5 @@
 import { and, count, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
-import type { Role } from "@zerotask/domain";
+import { countWeekdays, type Role } from "@zerotask/domain";
 import type { Database } from "../../db/client.ts";
 import {
   departments,
@@ -166,8 +166,15 @@ export async function workload(
   db: Database,
   options: { from: string; to: string; departmentId?: string },
 ) {
-  const filters = [gte(workLogs.logDate, options.from), lte(workLogs.logDate, options.to)];
-  if (options.departmentId) filters.push(eq(tasks.departmentId, options.departmentId));
+  /**
+   * The date range filters the joined work logs, and nothing else. The department
+   * filter belongs on `users`, which is the table this query selects from: putting
+   * `tasks.department_id` in the work-log join's ON clause referenced a table that
+   * is joined later, and Postgres refused the whole statement with 42P01.
+   */
+  const loggedFilters = [gte(workLogs.logDate, options.from), lte(workLogs.logDate, options.to)];
+  const scope = [isNull(users.deletedAt)];
+  if (options.departmentId) scope.push(eq(users.departmentId, options.departmentId));
 
   const [people, byDepartment] = await Promise.all([
     db
@@ -183,7 +190,7 @@ export async function workload(
       })
       .from(users)
       .leftJoin(departments, eq(departments.id, users.departmentId))
-      .leftJoin(workLogs, and(eq(workLogs.userId, users.id), and(...filters)))
+      .leftJoin(workLogs, and(eq(workLogs.userId, users.id), and(...loggedFilters)))
       .leftJoin(
         tasks,
         and(
@@ -191,7 +198,7 @@ export async function workload(
           isNull(tasks.deletedAt),
         ),
       )
-      .where(isNull(users.deletedAt))
+      .where(and(...scope))
       .groupBy(users.id, users.name, users.image, users.weeklyHours, users.departmentId, departments.name)
       .orderBy(desc(sql`coalesce(sum(${workLogs.hours})::float, 0)`)),
 
@@ -205,7 +212,7 @@ export async function workload(
       })
       .from(departments)
       .leftJoin(users, and(eq(users.departmentId, departments.id), isNull(users.deletedAt)))
-      .leftJoin(workLogs, and(eq(workLogs.userId, users.id), and(...filters)))
+      .leftJoin(workLogs, and(eq(workLogs.userId, users.id), and(...loggedFilters)))
       .groupBy(departments.id, departments.name, departments.color)
       .orderBy(departments.name),
   ]);
@@ -239,19 +246,6 @@ export async function workload(
           : 0,
     })),
   };
-}
-
-function countWeekdays(from: string, to: string): number {
-  const start = Date.parse(`${from}T00:00:00Z`);
-  const end = Date.parse(`${to}T00:00:00Z`);
-  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return 0;
-
-  let days = 0;
-  for (let cursor = start; cursor <= end; cursor += 86_400_000) {
-    const weekday = new Date(cursor).getUTCDay();
-    if (weekday !== 0 && weekday !== 6) days++;
-  }
-  return days;
 }
 
 /** Critical-path pressure across the visible projects, for the portfolio view. */

@@ -1,19 +1,23 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWorkload, useDepartments } from "@/features/hooks";
-import { addDaysIso, todayIso } from "@/lib/format";
+import { todayIso, formatHours } from "@/lib/format";
+import { countLabel, workloadWindow } from "@zerotask/domain";
 import { Button } from "@/components/ui/button";
-import { EmptyState, Figure, LoadingState, PageHeader } from "@/components/ui/surface";
+import { EmptyState, ErrorState, Figure, LoadingState, PageHeader } from "@/components/ui/surface";
 import { SelectField } from "@/components/ui/field";
-import { formatHours } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /**
- * Resources: who is carrying how much, over a fortnight.
+ * Resources: who is carrying how much, over the last fortnight.
  *
  * Utilisation is logged hours against the capacity the window actually contains,
  * counted in working days, capped at 200% so a data-entry mistake flattens nobody
  * else's bar. The bar marks 100%, not the edge, because the interesting question
  * is distance past full.
+ *
+ * The window ends today and looks backwards: logged hours describe days that have
+ * happened. The range comes from `workloadWindow` so the page and the test that
+ * covers it use the same arithmetic.
  */
 
 const WINDOWS = [
@@ -25,12 +29,23 @@ const WINDOWS = [
 export default function ResourcesPage() {
   const [windowDays, setWindowDays] = useState<(typeof WINDOWS)[number]["days"]>(14);
   const [departmentId, setDepartmentId] = useState<string>("all");
+  const [today, setToday] = useState(todayIso);
 
-  const { data: departments } = useDepartments();
+  // The window is relative to "now", so a page left open overnight must move with
+  // the clock rather than keep reporting yesterday's range.
+  useEffect(() => {
+    const timer = setInterval(() => setToday(todayIso()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
-  const from = todayIso();
-  const to = addDaysIso(from, windowDays);
-  const { data, isLoading } = useWorkload(from, to, departmentId === "all" ? undefined : departmentId);
+  const { data: departments, error: departmentsError } = useDepartments();
+
+  const { from, to } = workloadWindow(windowDays, today);
+  const { data, isLoading, error, refetch } = useWorkload(
+    from,
+    to,
+    departmentId === "all" ? undefined : departmentId,
+  );
 
   const people = data?.people.filter((person) => person.openTasks > 0 || person.loggedHours > 0) ?? [];
   const overCommitted = people.filter((person) => person.utilisation > 100);
@@ -48,7 +63,7 @@ export default function ResourcesPage() {
                 label="past 100% capacity"
                 tone={overCommitted.length > 0 ? "danger" : "settled"}
               />
-              <Figure value={data.window.weekdays} label="working days in window" />
+              <Figure value={data.window.weekdays} label="working day in window" plural="working days in window" />
             </>
           ) : undefined
         }
@@ -60,6 +75,7 @@ export default function ResourcesPage() {
                   key={option.days}
                   size="sm"
                   variant={windowDays === option.days ? "primary" : "secondary"}
+                  aria-pressed={windowDays === option.days}
                   onClick={() => setWindowDays(option.days)}
                 >
                   {option.label}
@@ -69,6 +85,7 @@ export default function ResourcesPage() {
             <div className="w-44">
               <SelectField
                 label="Department"
+                hint={departmentsError ? "Could not load departments" : undefined}
                 value={departmentId}
                 onChange={(event) => setDepartmentId(event.target.value)}
               >
@@ -85,13 +102,18 @@ export default function ResourcesPage() {
       />
 
       <div className="p-4 sm:p-6">
-        {isLoading || !data ? (
+        {error ? (
+          <ErrorState
+            description="We couldn't load the workload for this window. Check your connection and try again."
+            action={<Button onClick={() => void refetch()}>Try again</Button>}
+          />
+        ) : isLoading || !data ? (
           <LoadingState label="Loading workload" />
         ) : people.length === 0 ? (
           <div className="rounded-panel border border-rule bg-surface">
             <EmptyState
-              title="No logged work in this window"
-              description="Hours appear here once people log work against their tasks. Estimates are deliberately not shown: they are a wish, and the point of this page is what happened."
+              title="No work logged in this window"
+              description={`Nobody logged hours between ${from} and ${to}. Hours appear here once people log work against their tasks. Estimates are deliberately not shown: they are a wish, and the point of this page is what happened.`}
             />
           </div>
         ) : (
@@ -160,7 +182,7 @@ export default function ResourcesPage() {
                     <li key={department.departmentId} className="flex h-(--row-height) items-center gap-3 px-3">
                       <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ backgroundColor: department.color }} />
                       <span className="min-w-0 flex-1 truncate text-compact text-ink">{department.name}</span>
-                      <span className="tnum text-meta text-ink-muted">{department.headcount} people</span>
+                      <span className="tnum text-meta text-ink-muted">{countLabel(department.headcount, "person", "people")}</span>
                       <span className="tnum w-16 text-right text-compact text-ink">{formatHours(department.loggedHours)}</span>
                     </li>
                   ))}
