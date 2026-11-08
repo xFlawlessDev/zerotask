@@ -1,11 +1,10 @@
 import { Elysia } from "elysia";
-import { and, eq } from "drizzle-orm";
 import type { ProjectRole, Role } from "@zerotask/domain";
 import { projectRoleAtLeast, roleAtLeast } from "@zerotask/domain";
 import { errors } from "./errors.ts";
+import { projectStanding } from "./membership.ts";
 import type { Database } from "../db/client.ts";
 import type { Auth, SessionUser } from "../db/auth.ts";
-import { projectMembers } from "../db/schema/index.ts";
 
 export interface RequestContext {
   db: Database;
@@ -108,20 +107,10 @@ export function createGuards(context: RequestContext) {
           if (!user) throw errors.unauthorized();
           const projectId = readProjectId(params, param);
 
-          if (user.role === "admin") {
-            return { user, projectId, projectRole: "owner" };
-          }
+          const role = await projectStanding(context.db, projectId, user);
+          if (!role) throw errors.forbidden("You are not a member of this project");
 
-          const membership = await context.db.query.projectMembers.findFirst({
-            where: and(
-              eq(projectMembers.projectId, projectId),
-              eq(projectMembers.userId, user.id),
-            ),
-          });
-
-          if (!membership) throw errors.forbidden("You are not a member of this project");
-
-          return { user, projectId, projectRole: membership.role };
+          return { user, projectId, projectRole: role };
         },
       }),
 
@@ -134,23 +123,13 @@ export function createGuards(context: RequestContext) {
           if (!user) throw errors.unauthorized();
           const projectId = readProjectId(params, options.param);
 
-          if (user.role === "admin") {
-            return { user, projectId, projectRole: "owner" };
-          }
-
-          const membership = await context.db.query.projectMembers.findFirst({
-            where: and(
-              eq(projectMembers.projectId, projectId),
-              eq(projectMembers.userId, user.id),
-            ),
-          });
-
-          if (!membership) throw errors.forbidden("You are not a member of this project");
-          if (!projectRoleAtLeast(membership.role, options.minimum)) {
+          const role = await projectStanding(context.db, projectId, user);
+          if (!role) throw errors.forbidden("You are not a member of this project");
+          if (!projectRoleAtLeast(role, options.minimum)) {
             throw errors.forbidden(`This action needs ${options.minimum} rights on the project`);
           }
 
-          return { user, projectId, projectRole: membership.role };
+          return { user, projectId, projectRole: role };
         },
       }),
     });
