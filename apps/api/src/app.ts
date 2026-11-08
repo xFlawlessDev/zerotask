@@ -5,6 +5,7 @@ import type { Database } from "./db/client.ts";
 import type { Auth } from "./db/auth.ts";
 import { createGuards, type RequestContext } from "./lib/guards.ts";
 import { errorHandler } from "./lib/error-handler.ts";
+import { errors } from "./lib/errors.ts";
 import { authModule } from "./modules/auth/index.ts";
 import { peopleModule } from "./modules/people/index.ts";
 import { projectsModule } from "./modules/projects/index.ts";
@@ -61,10 +62,19 @@ export function createApp(deps: AppDeps) {
     .use(notificationsModule(deps, guards))
     .use(insightsModule(deps, guards))
     /**
-     * Better Auth owns sign-up, sign-in, sign-out, and session refresh. Mounted
-     * at "/auth" inside the /api-prefixed app, so the endpoints live at
-     * /api/auth/*: scoping it here keeps its catch-all away from the domain
-     * routes, whose 404 bodies stay in the error contract.
+     * Accounts are created by an admin through POST /people, so the public sign-up
+     * endpoint is closed here. It is declared before the mount so it wins over the
+     * Better Auth catch-all. Better Auth's own `disableSignUp` is not used because it
+     * also blocks the server-side signUpEmail call that the admin route depends on.
+     */
+    .post("/auth/sign-up/email", () => {
+      throw errors.forbidden("Accounts are created by an admin. Ask your manager for access.");
+    })
+    /**
+     * Better Auth owns sign-in, sign-out, and session refresh. Mounted at "/auth"
+     * inside the /api-prefixed app, so the endpoints live at /api/auth/*: scoping it
+     * here keeps its catch-all away from the domain routes, whose 404 bodies stay in
+     * the error contract.
      */
     .mount("/auth", deps.auth.handler);
 }

@@ -121,7 +121,26 @@ describe("API", () => {
       expect(payload.capabilities.managePeople).toBe(false);
     });
 
+    it("rejects public sign-up, while an admin can still create accounts", async () => {
+      const publicSignUp = await request(harness.api, null, "POST", "/auth/sign-up/email", {
+        email: "newcomer@example.com",
+        password: PASSWORD,
+        name: "Newcomer",
+      });
+      expect(publicSignUp.status).toBe(403);
+      expect(publicSignUp.body?.code).toBe("FORBIDDEN");
+
+      const created = await request(admin.api, admin.token, "POST", "/people", {
+        email: "invited@example.com",
+        password: PASSWORD,
+        name: "Invited Person",
+      });
+      expect(created.status).toBe(200);
+      expect(created.body?.email).toBe("invited@example.com");
+    });
+
     it("rejects a protected route without a token", async () => {
+
       const { status, body } = await request(harness.api, null, "GET", "/projects");
       expect(status).toBe(401);
       expect(body?.code).toBe("UNAUTHORIZED");

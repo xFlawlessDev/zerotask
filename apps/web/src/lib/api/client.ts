@@ -158,35 +158,6 @@ function storeBearerToken(response: Response, payload: { token?: string } | null
 }
 
 
-export async function signUp(input: {
-  email: string;
-  password: string;
-  name: string;
-}): Promise<void> {
-  const response = await fetch(`${BASE}/auth/sign-up/email`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-    credentials: "same-origin",
-  });
-
-  const payload = (await response.json().catch(() => null)) as
-    | { token?: string; message?: string; code?: string }
-    | null;
-
-  if (!response.ok) {
-    throw new ApiRequestError(response.status, {
-      code: payload?.code ?? `HTTP_${response.status}`,
-      message:
-        response.status === 422 && payload?.message
-          ? payload.message
-          : (payload?.message ?? "That account could not be created"),
-    });
-  }
-
-  storeBearerToken(response, payload);
-}
-
 export async function signOut(): Promise<void> {
   await fetch(`${BASE}/auth/sign-out`, {
     method: "POST",
